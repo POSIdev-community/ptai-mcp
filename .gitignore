@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.log
+.env
+.env.*
+!.env.example
+
+# Local editor and OS files
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+.DS_Store
