@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   downloadBundle,
   findInstallerUrl,
@@ -18,9 +18,15 @@ import {
   writeStandaloneRules,
 } from '../src/agents/rules.js';
 
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
+
 describe('downloader metadata', () => {
   it('builds the production installer URL with numeric version routing', () => {
     // Arrange
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
     const version = '2.10.0.1396-feature-as-7163-openai-api';
     const domain = 'example.test';
 
@@ -31,6 +37,8 @@ describe('downloader metadata', () => {
     expect(url).toBe(
       'https://example.test/api/v6/products/AI.INFRASTRUCTURE.INSTALLATOR.zip/2.10.0.1396/download/AI.INFRASTRUCTURE.INSTALLATOR.2.10.0.1396-feature-as-7163-openai-api.zip',
     );
+
+    platform.mockRestore();
   });
 
   it('falls back from the production endpoint to the test endpoint', async () => {

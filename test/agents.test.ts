@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import syncFs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   configureMcp,
   isMcpConfigured,
@@ -12,6 +12,11 @@ import {
 } from '../src/agents/mcpConfig.js';
 import { AGENTS, getAgent, getSupportedAgents, isAgentDetected } from '../src/agents/registry.js';
 import { AGENT_IDS } from '../src/agents/constants.js';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
 
 describe('agent registry', () => {
   it('contains all planned agents', () => {
@@ -33,6 +38,7 @@ describe('agent registry', () => {
 
   it('uses the legacy Windsurf AppData location when needed', () => {
     // Arrange
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
     const exists = vi
       .spyOn(syncFs, 'existsSync')
       .mockImplementation((candidate) => String(candidate).includes('AppData'));
@@ -46,6 +52,7 @@ describe('agent registry', () => {
 
     // Cleanup
     exists.mockRestore();
+    platform.mockRestore();
     vi.unstubAllEnvs();
   });
 

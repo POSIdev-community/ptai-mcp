@@ -15,11 +15,13 @@ import {
 
 describe('bundle paths', () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 
   it('uses LOCALAPPDATA on Windows', () => {
     // Arrange
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
     vi.stubEnv('LOCALAPPDATA', path.join('C:', 'Users', 'tester', 'AppData', 'Local'));
 
     // Act & Assert
@@ -29,6 +31,8 @@ describe('bundle paths', () => {
     expect(getProxyPath()).toBe(path.join(getBundleDir(), 'McpProxy.exe'));
     expect(getBackendPath()).toBe(path.join(getBundleDir(), 'AI.PluginsBackend.exe'));
     expect(getBundleExtension()).toBe('zip');
+
+    platform.mockRestore();
   });
 
   it('reads versions.json from the bundle directory', async () => {
