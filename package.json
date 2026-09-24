@@ -23,9 +23,10 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "verify": "npm run lint && npm run format:check && npm run typecheck && npm run test:coverage && npm run build",
+    "artifact": "npm pack",
+    "prepack": "npm run verify",
     "format": "prettier --write .",
-    "prepare": "husky",
-    "prepublishOnly": "npm run verify"
+    "prepare": "husky"
   },
   "config": {
     "bundleVersion": "2.10.0.1396-feature-as-7163-openai-api"
