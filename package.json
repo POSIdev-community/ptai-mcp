@@ -1,7 +1,7 @@
 {
   "name": "@posidev-community/ptai-mcp",
   "version": "1.0.0",
-  "description": "Standalone npm-package for PT Application Inspector MCP proxy",
+  "description": "Standalone npm-package for PT Application Inspector MCP",
   "type": "module",
   "main": "dist/cli.js",
   "bin": {
@@ -29,7 +29,7 @@
     "prepare": "husky"
   },
   "config": {
-    "bundleVersion": "2.10.0.1396-feature-as-7163-openai-api"
+    "bundleVersion": "2.10.0.1428-develop"
   },
   "engines": {
     "node": ">=18"

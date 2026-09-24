@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import cliProgress from 'cli-progress';
 import { logger as log } from '../utils/logger.js';
 import { downloadBundle, unpackBundle } from '../utils/downloader.js';
+import { getDownloadSecurityOptions } from '../utils/downloadSecurity.js';
 import { killAnalyzerProcesses } from '../utils/processes.js';
 import { getBundleDir, getExpectedBundleVersion, readVersionsJson } from '../utils/paths.js';
 
@@ -22,6 +23,7 @@ export async function updateCommand(): Promise<void> {
     const result = await downloadBundle({
       version,
       signal: abortController.signal,
+      ...getDownloadSecurityOptions(),
       onProgress: ({ downloaded, total }) => {
         if (total <= 0) return;
         if (!bar) {

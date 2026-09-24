@@ -22,9 +22,26 @@ install the analyzer bundle with:
 npx @posidev-community/ptai-mcp install
 ```
 
-Installation stops running analyzer processes, downloads the configured
-production bundle, and unpacks it into the platform bundle directory. Agent
-configuration can then be managed with `configure`.
+Installation stops running analyzer processes, downloads the configured bundle,
+and unpacks it into the platform bundle directory. The production endpoint is
+checked first; development builds may be available only from the PT test
+endpoint. Agent configuration can then be managed with `configure`.
+
+If the test endpoint presents an untrusted TLS certificate, the CLI asks for
+explicit confirmation before disabling certificate verification for that
+download only. In a trusted, non-interactive development environment the same
+choice can be supplied explicitly with `PTAI_MCP_ALLOW_INSECURE_TEST_TLS=1`:
+
+```bash
+PTAI_MCP_ALLOW_INSECURE_TEST_TLS=1 npx @posidev-community/ptai-mcp install
+```
+
+```powershell
+$env:PTAI_MCP_ALLOW_INSECURE_TEST_TLS = '1'
+npx @posidev-community/ptai-mcp install
+```
+
+Do not set this variable for untrusted endpoints or routine production use.
 
 Other commands:
 

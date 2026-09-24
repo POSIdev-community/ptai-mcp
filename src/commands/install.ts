@@ -5,6 +5,7 @@ import { logger as log } from '../utils/logger.js';
 import { configureCommand } from './configure.js';
 import { killAnalyzerProcesses } from '../utils/processes.js';
 import { downloadBundle, unpackBundle } from '../utils/downloader.js';
+import { getDownloadSecurityOptions } from '../utils/downloadSecurity.js';
 import {
   getBundleDir,
   getExpectedBundleVersion,
@@ -54,6 +55,7 @@ export async function installCommand(): Promise<void> {
     const downloadResult = await downloadBundle({
       version: newVersion,
       signal: abortController.signal,
+      ...getDownloadSecurityOptions(),
       onProgress: ({ downloaded, total }) => {
         if (total <= 0) return;
         if (!progressBar) {

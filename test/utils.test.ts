@@ -1,12 +1,15 @@
 import fs from 'node:fs/promises';
 import { Readable } from 'node:stream';
+import { EventEmitter } from 'node:events';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   downloadBundle,
+  createInsecureTestRequest,
   findInstallerUrl,
   getInstallerUrl,
+  isTlsCertificateError,
   unpackBundle,
   type RequestFunction,
 } from '../src/utils/downloader.js';
@@ -56,6 +59,92 @@ describe('downloader metadata', () => {
     // Assert
     expect(url).toContain('flus-test.ptsecurity.ru');
     expect(seen).toHaveLength(2);
+  });
+
+  it('asks before using the test endpoint when its certificate is not trusted', async () => {
+    // Arrange
+    const strictRequest: RequestFunction = async (url) => {
+      if (url.toString().includes('flus-test')) {
+        throw Object.assign(new Error('fetch failed'), { cause: { code: 'SELF_SIGNED_CERT_IN_CHAIN' } });
+      }
+      return new Response(null, { status: 404 });
+    };
+    const insecureRequest = vi.fn<RequestFunction>(async () => new Response(null, { status: 200 }));
+    const confirm = vi.fn(async () => true);
+
+    // Act
+    const url = await findInstallerUrl('1.0.0', undefined, strictRequest, {
+      confirmInsecureTestTls: confirm,
+      insecureTestRequest: insecureRequest,
+    });
+
+    // Assert
+    expect(url).toContain('flus-test.ptsecurity.ru');
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(insecureRequest).toHaveBeenCalledOnce();
+  });
+
+  it('cancels the test endpoint when insecure TLS is not approved', async () => {
+    // Arrange
+    const request: RequestFunction = async (url) => {
+      if (url.toString().includes('flus-test')) {
+        throw Object.assign(new Error('fetch failed'), { code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' });
+      }
+      return new Response(null, { status: 404 });
+    };
+
+    // Act & Assert
+    await expect(
+      findInstallerUrl('1.0.0', undefined, request, { confirmInsecureTestTls: async () => false }),
+    ).rejects.toThrow('Certificate verification was not disabled');
+  });
+
+  it('recognizes nested TLS certificate errors', () => {
+    expect(isTlsCertificateError({ cause: { code: 'CERT_HAS_EXPIRED' } })).toBe(true);
+    expect(isTlsCertificateError(new Error('ordinary failure'))).toBe(false);
+  });
+
+  it('streams an approved insecure test request without changing global TLS settings', async () => {
+    // Arrange
+    const response = Readable.from([Buffer.from('payload')]) as Readable & {
+      statusCode?: number;
+      statusMessage?: string;
+      headers: Record<string, string>;
+    };
+    response.statusCode = 200;
+    response.statusMessage = 'OK';
+    response.headers = { 'content-length': '7' };
+    const request = vi.fn((_url: unknown, _options: unknown, callback: (response: unknown) => void) => {
+      const client = new EventEmitter() as EventEmitter & {
+        end: () => void;
+        destroy: (error?: Error) => void;
+      };
+      client.end = () => queueMicrotask(() => callback(response));
+      client.destroy = (error) => {
+        if (error) client.emit('error', error);
+      };
+      return client;
+    });
+    const requestFn = createInsecureTestRequest(request as never);
+
+    // Act
+    const result = await requestFn('https://flus-test.ptsecurity.ru/bundle.zip', {
+      method: 'GET',
+      headers: { Range: 'bytes=0-' },
+    });
+
+    // Assert
+    expect(await result.text()).toBe('payload');
+    expect(request).toHaveBeenCalledWith(
+      expect.any(URL),
+      expect.objectContaining({ rejectUnauthorized: false, method: 'GET' }),
+      expect.any(Function),
+    );
+  });
+
+  it('rejects insecure requests outside the test endpoint', async () => {
+    const requestFn = createInsecureTestRequest();
+    await expect(requestFn('https://example.test/bundle.zip')).rejects.toThrow('restricted');
   });
 
   it('downloads a fresh archive and reports progress', async () => {
@@ -294,6 +383,80 @@ describe('downloader metadata', () => {
     ).rejects.toThrow('size mismatch');
 
     // Cleanup
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('aborts while writing a response stream', async () => {
+    // Arrange
+    const controller = new AbortController();
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-download-abort-'));
+    const archivePath = path.join(root, 'bundle.zip');
+    const payload = Buffer.from('abort me');
+    const request: RequestFunction = async (_url, init) => {
+      if (init?.method === 'HEAD') {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-length': String(payload.length) }),
+          body: Readable.from([]),
+        } as unknown as Response;
+      }
+      const body = new Readable({ read() {} });
+      setTimeout(() => body.push(payload), 0);
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-length': String(payload.length) }),
+        body,
+      } as unknown as Response;
+    };
+
+    // Act & Assert
+    await expect(
+      downloadBundle({
+        version: '1.0.0',
+        url: 'https://test.invalid/bundle.zip',
+        outputPath: archivePath,
+        signal: controller.signal,
+        request,
+        onProgress: () => controller.abort(),
+      }),
+    ).rejects.toThrow('Installer download aborted');
+
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('writes a web-stream response body', async () => {
+    // Arrange
+    const payload = Buffer.from('web stream payload');
+    const request: RequestFunction = async (_url, init) =>
+      ({
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-length': String(payload.length) }),
+        body:
+          init?.method === 'HEAD'
+            ? Readable.from([])
+            : new ReadableStream({
+                start(controller) {
+                  controller.enqueue(payload);
+                  controller.close();
+                },
+              }),
+      }) as unknown as Response;
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-web-stream-'));
+    const archivePath = path.join(root, 'bundle.zip');
+
+    // Act
+    await downloadBundle({
+      version: '1.0.0',
+      url: 'https://test.invalid/bundle.zip',
+      outputPath: archivePath,
+      request,
+    });
+
+    // Assert
+    expect(await fs.readFile(archivePath)).toEqual(payload);
     await fs.rm(root, { recursive: true, force: true });
   });
 });

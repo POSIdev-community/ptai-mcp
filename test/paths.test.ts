@@ -86,7 +86,7 @@ describe('bundle paths', () => {
 
     // Act & Assert
     expect(readVersionsJson()).toBeNull();
-    expect(getExpectedBundleVersion()).toBe('2.10.0.1396-feature-as-7163-openai-api');
+    expect(getExpectedBundleVersion()).toBe('2.10.0.1428-develop');
 
     await fs.rm(root, { recursive: true, force: true });
   });
