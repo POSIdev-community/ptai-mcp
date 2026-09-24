@@ -6,6 +6,7 @@ import { configureCommand } from './configure.js';
 import { killAnalyzerProcesses } from '../utils/processes.js';
 import { downloadBundle, unpackBundle } from '../utils/downloader.js';
 import { getDownloadSecurityOptions } from '../utils/downloadSecurity.js';
+import { formatTransfer } from '../utils/progress.js';
 import {
   getBundleDir,
   getExpectedBundleVersion,
@@ -47,6 +48,7 @@ export async function installCommand(): Promise<void> {
   process.once('SIGINT', onSigint);
 
   let progressBar: cliProgress.SingleBar | undefined;
+  let extractionBar: cliProgress.SingleBar | undefined;
   try {
     log.step('Stopping analyzer processes...');
     await killAnalyzerProcesses();
@@ -61,14 +63,14 @@ export async function installCommand(): Promise<void> {
         if (!progressBar) {
           progressBar = new cliProgress.SingleBar(
             {
-              format: '  [{bar}] {percentage}% | {value}/{total} bytes',
+              format: '  [{bar}] {percentage}% | {bytes}',
               hideCursor: true,
             },
             cliProgress.Presets.shades_classic,
           );
-          progressBar.start(total, downloaded);
+          progressBar.start(total, downloaded, { bytes: formatTransfer(downloaded, total) });
         } else {
-          progressBar.update(Math.min(downloaded, total));
+          progressBar.update(Math.min(downloaded, total), { bytes: formatTransfer(downloaded, total) });
         }
       },
     });
@@ -76,7 +78,18 @@ export async function installCommand(): Promise<void> {
     progressBar = undefined;
 
     log.step('Unpacking analyzer bundle...');
-    await unpackBundle(downloadResult.archivePath, getBundleDir());
+    await unpackBundle(downloadResult.archivePath, getBundleDir(), undefined, ({ extracted, total }) => {
+      if (!extractionBar) {
+        extractionBar = new cliProgress.SingleBar(
+          { format: '  [{bar}] {percentage}% | {value}/{total} files', hideCursor: true },
+          cliProgress.Presets.shades_classic,
+        );
+        extractionBar.start(total, extracted);
+      } else {
+        extractionBar.update(extracted);
+      }
+    });
+    extractionBar?.stop();
 
     if (process.platform !== 'darwin') {
       fs.rmSync(downloadResult.archivePath, { force: true });
@@ -86,6 +99,7 @@ export async function installCommand(): Promise<void> {
     await configureCommand();
   } finally {
     progressBar?.stop();
+    extractionBar?.stop();
     process.removeListener('SIGINT', onSigint);
   }
 }

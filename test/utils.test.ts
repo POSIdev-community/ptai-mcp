@@ -13,6 +13,7 @@ import {
   unpackBundle,
   type RequestFunction,
 } from '../src/utils/downloader.js';
+import { formatBytes, formatTransfer } from '../src/utils/progress.js';
 import {
   appendRules,
   deleteStandaloneRules,
@@ -426,6 +427,44 @@ describe('downloader metadata', () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
+  it('does not start writing when aborted before the response body is consumed', async () => {
+    // Arrange
+    const controller = new AbortController();
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-download-preabort-'));
+    const archivePath = path.join(root, 'bundle.zip');
+    const payload = Buffer.from('preabort');
+    const request: RequestFunction = async (_url, init) => {
+      if (init?.method === 'HEAD') {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-length': String(payload.length) }),
+          body: Readable.from([]),
+        } as unknown as Response;
+      }
+      controller.abort();
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-length': String(payload.length) }),
+        body: Readable.from([payload]),
+      } as unknown as Response;
+    };
+
+    // Act & Assert
+    await expect(
+      downloadBundle({
+        version: '1.0.0',
+        url: 'https://test.invalid/bundle.zip',
+        outputPath: archivePath,
+        signal: controller.signal,
+        request,
+      }),
+    ).rejects.toThrow('Installer download aborted');
+
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
   it('writes a web-stream response body', async () => {
     // Arrange
     const payload = Buffer.from('web stream payload');
@@ -462,6 +501,13 @@ describe('downloader metadata', () => {
 });
 
 describe('bundle unpacking', () => {
+  it('formats transfer sizes for human-readable progress', () => {
+    expect(formatBytes(2_006_908_566)).toBe('1.87 GB');
+    expect(formatTransfer(2_006_908_566, 2_503_376_680)).toBe('1.87 GB / 2.33 GB');
+    expect(formatTransfer(10, 0)).toBe('10 B');
+    expect(formatBytes(Number.NaN)).toBe('0 B');
+  });
+
   it('uses the macOS extraction command', async () => {
     // Arrange
     const run = vi.fn(async () => ({ stdout: '', stderr: '' }));
@@ -509,6 +555,73 @@ describe('bundle unpacking', () => {
 
     // Cleanup
     platform.mockRestore();
+  });
+
+  it('reports progress while extracting Windows archives natively', async () => {
+    // Arrange
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-extract-'));
+    const child = new EventEmitter() as EventEmitter & {
+      stdout: EventEmitter & { setEncoding: (encoding: string) => void };
+      stderr: EventEmitter & { setEncoding: (encoding: string) => void };
+    };
+    child.stdout = Object.assign(new EventEmitter(), { setEncoding: () => undefined });
+    child.stderr = Object.assign(new EventEmitter(), { setEncoding: () => undefined });
+    type SpawnFunction = typeof import('node:child_process').spawn;
+    const spawn = ((..._args: Parameters<SpawnFunction>) => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'PTAI_PROGRESS:1:2\r\nPTAI_PROGRESS:2:2\r\n');
+        child.emit('close', 0);
+      });
+      return child as never;
+    }) as unknown as SpawnFunction;
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    const progress: Array<{ extracted: number; total: number }> = [];
+
+    // Act
+    await unpackBundle(
+      path.join(root, 'bundle.zip'),
+      path.join(root, 'bundle'),
+      undefined,
+      (value) => progress.push(value),
+      spawn,
+    );
+
+    // Assert
+    expect(progress).toEqual([
+      { extracted: 1, total: 2 },
+      { extracted: 2, total: 2 },
+    ]);
+    // Cleanup
+    platform.mockRestore();
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('reports native extraction failures', async () => {
+    // Arrange
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-extract-error-'));
+    const child = new EventEmitter() as EventEmitter & {
+      stdout: EventEmitter & { setEncoding: (encoding: string) => void };
+      stderr: EventEmitter & { setEncoding: (encoding: string) => void };
+    };
+    child.stdout = Object.assign(new EventEmitter(), { setEncoding: () => undefined });
+    child.stderr = Object.assign(new EventEmitter(), { setEncoding: () => undefined });
+    const spawn = ((..._args: Parameters<typeof import('node:child_process').spawn>) => {
+      queueMicrotask(() => {
+        child.stderr.emit('data', 'access denied');
+        child.emit('close', 1);
+      });
+      return child as never;
+    }) as unknown as typeof import('node:child_process').spawn;
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+
+    // Act & Assert
+    await expect(
+      unpackBundle(path.join(root, 'bundle.zip'), path.join(root, 'bundle'), undefined, undefined, spawn),
+    ).rejects.toThrow('access denied');
+
+    // Cleanup
+    platform.mockRestore();
+    await fs.rm(root, { recursive: true, force: true });
   });
 
   it('rejects unsupported OS', async () => {

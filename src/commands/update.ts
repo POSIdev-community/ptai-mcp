@@ -3,6 +3,7 @@ import cliProgress from 'cli-progress';
 import { logger as log } from '../utils/logger.js';
 import { downloadBundle, unpackBundle } from '../utils/downloader.js';
 import { getDownloadSecurityOptions } from '../utils/downloadSecurity.js';
+import { formatTransfer } from '../utils/progress.js';
 import { killAnalyzerProcesses } from '../utils/processes.js';
 import { getBundleDir, getExpectedBundleVersion, readVersionsJson } from '../utils/paths.js';
 
@@ -17,6 +18,7 @@ export async function updateCommand(): Promise<void> {
   const onSigint = () => abortController.abort();
   process.once('SIGINT', onSigint);
   let bar: cliProgress.SingleBar | undefined;
+  let extractionBar: cliProgress.SingleBar | undefined;
 
   try {
     await killAnalyzerProcesses();
@@ -29,24 +31,36 @@ export async function updateCommand(): Promise<void> {
         if (!bar) {
           bar = new cliProgress.SingleBar(
             {
-              format: '  [{bar}] {percentage}% | {value}/{total} bytes',
+              format: '  [{bar}] {percentage}% | {bytes}',
               hideCursor: true,
             },
             cliProgress.Presets.shades_classic,
           );
-          bar.start(total, downloaded);
+          bar.start(total, downloaded, { bytes: formatTransfer(downloaded, total) });
         } else {
-          bar.update(Math.min(downloaded, total));
+          bar.update(Math.min(downloaded, total), { bytes: formatTransfer(downloaded, total) });
         }
       },
     });
     bar?.stop();
     bar = undefined;
-    await unpackBundle(result.archivePath, getBundleDir());
+    await unpackBundle(result.archivePath, getBundleDir(), undefined, ({ extracted, total }) => {
+      if (!extractionBar) {
+        extractionBar = new cliProgress.SingleBar(
+          { format: '  [{bar}] {percentage}% | {value}/{total} files', hideCursor: true },
+          cliProgress.Presets.shades_classic,
+        );
+        extractionBar.start(total, extracted);
+      } else {
+        extractionBar.update(extracted);
+      }
+    });
+    extractionBar?.stop();
     if (process.platform !== 'darwin') fs.rmSync(result.archivePath, { force: true });
     log.success(`Bundle ${version} updated.`);
   } finally {
     bar?.stop();
+    extractionBar?.stop();
     process.removeListener('SIGINT', onSigint);
   }
 }

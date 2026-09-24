@@ -55,7 +55,9 @@ npx @posidev-community/ptai-mcp uninstall
 `configure` offers separate MCP and hooks selections for Cursor, Claude
 Desktop, Claude Code, Windsurf, Kimi Code, Codex, Antigravity, and Gemini CLI.
 Existing JSON/TOML settings and unrelated hooks are preserved. Agent
-configuration is supported on Windows, macOS, and Linux.
+configuration is supported on Windows, macOS, and Linux. Only agents with a
+detected configuration directory are shown. MCP servers are selected first;
+the hooks step then lists only the selected agents that support hooks.
 
 Additional arguments after `start` are passed directly to `McpProxy`:
 

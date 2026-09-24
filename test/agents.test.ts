@@ -59,13 +59,14 @@ describe('agent registry', () => {
   it('detects existing config files', async () => {
     // Arrange
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-detect-'));
-    const configPath = path.join(root, 'mcp.json');
+    const configPath = path.join(root, 'agent', 'mcp.json');
     const agent = { ...AGENTS[0], getMcpConfigPaths: () => [configPath] };
 
     // Act & Assert
     expect(isAgentDetected(agent)).toBe(false);
 
     // Arrange
+    await fs.mkdir(path.dirname(configPath), { recursive: true });
     await fs.writeFile(configPath, '{}');
 
     // Act & Assert
@@ -73,6 +74,17 @@ describe('agent registry', () => {
 
     // Cleanup
     await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('does not detect a home-level config just because the home directory exists', () => {
+    // Arrange
+    const agent = {
+      ...AGENTS[2],
+      getMcpConfigPaths: () => [path.join(os.homedir(), '.ptai-missing-claude.json')],
+    };
+
+    // Act & Assert
+    expect(isAgentDetected(agent)).toBe(false);
   });
 
   it('returns all agents on all platforms including Linux', () => {

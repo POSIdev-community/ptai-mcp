@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import https from 'node:https';
+import { spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
@@ -9,6 +10,7 @@ import { promisify } from 'node:util';
 import { getBundleDir, getBundleExtension, getExpectedBundleVersion } from './paths.js';
 
 const execFileAsync = promisify(execFile);
+const defaultBundleRunner = execFileAsync as unknown as BundleRunner;
 const PRODUCTION_DOMAIN = 'update.ptsecurity.com';
 const TEST_DOMAIN = 'flus-test.ptsecurity.ru';
 const MAX_ATTEMPTS = 3;
@@ -25,6 +27,11 @@ const TLS_CERTIFICATE_ERROR_CODES = new Set([
 
 export interface DownloadProgress {
   downloaded: number;
+  total: number;
+}
+
+export interface ExtractionProgress {
+  extracted: number;
   total: number;
 }
 
@@ -49,6 +56,9 @@ export type BundleRunner = (
   args?: readonly string[],
   options?: { windowsHide?: boolean },
 ) => Promise<unknown>;
+
+export type ExtractionProgressHandler = (progress: ExtractionProgress) => void;
+export type BundleProcessSpawner = typeof spawn;
 
 interface HeadResponse {
   statusCode: number;
@@ -316,7 +326,9 @@ async function downloadOnce(url: string, archivePath: string, options: DownloadO
 export async function unpackBundle(
   archivePath: string,
   bundleDir = getBundleDir(),
-  run: BundleRunner = execFileAsync as unknown as BundleRunner,
+  run: BundleRunner = defaultBundleRunner,
+  onProgress?: ExtractionProgressHandler,
+  spawnProcess: BundleProcessSpawner = spawn,
 ): Promise<void> {
   if (process.platform === 'darwin') {
     await run('open', [archivePath]);
@@ -327,6 +339,11 @@ export async function unpackBundle(
   await fsp.mkdir(bundleDir, { recursive: true });
 
   if (process.platform === 'win32') {
+    if (run === defaultBundleRunner) {
+      await extractWindowsZip(archivePath, bundleDir, onProgress, spawnProcess);
+      return;
+    }
+
     const quotePowerShell = (value: string) => `'${value.replaceAll("'", "''")}'`;
     const command = [
       'Expand-Archive',
@@ -346,6 +363,67 @@ export async function unpackBundle(
   }
 
   throw new Error(`Unsupported OS: ${process.platform}`);
+}
+
+async function extractWindowsZip(
+  archivePath: string,
+  bundleDir: string,
+  onProgress?: ExtractionProgressHandler,
+  spawnProcess: BundleProcessSpawner = spawn,
+): Promise<void> {
+  const quotePowerShell = (value: string) => `'${value.replaceAll("'", "''")}'`;
+  const archive = quotePowerShell(archivePath);
+  const destination = quotePowerShell(bundleDir);
+  const command = [
+    '$ErrorActionPreference = "Stop";',
+    'Add-Type -AssemblyName System.IO.Compression.FileSystem;',
+    `$archive = [System.IO.Compression.ZipFile]::OpenRead(${archive});`,
+    `try { $destination = [System.IO.Path]::GetFullPath(${destination});`,
+    '  $files = @($archive.Entries | Where-Object { -not [string]::IsNullOrEmpty($_.Name) });',
+    '  $total = $files.Count; $extracted = 0;',
+    '  foreach ($entry in $files) {',
+    '    $relative = $entry.FullName.Replace("/", [System.IO.Path]::DirectorySeparatorChar);',
+    '    $target = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($destination, $relative));',
+    '    if (-not $target.StartsWith($destination + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) { throw "Unsafe archive path: $($entry.FullName)"; }',
+    '    [System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($target)) | Out-Null;',
+    '    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true);',
+    '    $extracted++; Write-Output ("PTAI_PROGRESS:{0}:{1}" -f $extracted, $total);',
+    '  }',
+    '} finally { $archive.Dispose(); }',
+  ].join(' ');
+
+  await new Promise<void>((resolve, reject) => {
+    const child = spawnProcess('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', command], {
+      windowsHide: true,
+    });
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk;
+      const lines = stdout.split(/\r?\n/);
+      stdout = lines.pop() ?? '';
+      for (const line of lines) {
+        const match = /^PTAI_PROGRESS:(\d+):(\d+)$/.exec(line.trim());
+        if (match) onProgress?.({ extracted: Number(match[1]), total: Number(match[2]) });
+      }
+    });
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+    });
+    child.once('error', reject);
+    child.once('close', (code) => {
+      if (code === 0) {
+        const match = /^PTAI_PROGRESS:(\d+):(\d+)$/.exec(stdout.trim());
+        if (match) onProgress?.({ extracted: Number(match[1]), total: Number(match[2]) });
+        resolve();
+      } else {
+        reject(new Error(`Windows archive extraction failed${stderr.trim() ? `: ${stderr.trim()}` : ''}.`));
+      }
+    });
+  });
 }
 
 async function writeResponseToFile(

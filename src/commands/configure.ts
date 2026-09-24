@@ -5,66 +5,88 @@ import { configureMcp, isMcpConfigured, removeMcp } from '../agents/mcpConfig.js
 import { getSupportedAgents, type AgentDefinition, isAgentDetected } from '../agents/registry.js';
 import { getProxyPath } from '../utils/paths.js';
 
+export const BACK_TO_MCP_SELECTION = '__back_to_mcp_selection__';
+
 export async function configureCommand(): Promise<void> {
-  const agents = getSupportedAgents();
-  if (agents.length === 0) {
+  const supportedAgents = getSupportedAgents();
+  if (supportedAgents.length === 0) {
     throw new Error(`Unsupported OS: ${process.platform}`);
   }
-
-  const mcpSelection = await multiselect({
-    message: 'Select agents for MCP configuration:',
-    options: agents.map((agent) => ({
-      value: agent.id,
-      label: agent.displayName,
-      hint: formatPaths(agent.getMcpConfigPaths(), isAgentDetected(agent)),
-    })),
-    required: false,
-  });
-  if (isCancel(mcpSelection)) {
-    log.info('Configuration cancelled.');
+  const agents = supportedAgents.filter(isAgentDetected);
+  if (agents.length === 0) {
+    log.info('No supported AI agents were detected on this computer.');
     return;
   }
 
-  const selectedMcp = new Set(mcpSelection);
-  for (const agent of agents) {
-    const selected = selectedMcp.has(agent.id);
-    for (const configPath of agent.getMcpConfigPaths()) {
-      if (selected) {
-        const result = await configureMcp(agent, configPath);
-        if (result.paths.length > 0) log.success(`MCP configured for ${agent.displayName}: ${configPath}`);
-      } else {
-        await removeMcpIfPresent(agent, configPath);
+  while (true) {
+    const mcpSelection = await multiselect({
+      message: 'Select agents for MCP configuration:',
+      options: agents.map((agent) => ({
+        value: agent.id,
+        label: agent.displayName,
+        hint: formatPaths(agent.getMcpConfigPaths(), isAgentDetected(agent)),
+      })),
+      required: false,
+    });
+    if (isCancel(mcpSelection)) {
+      log.info('Configuration cancelled.');
+      return;
+    }
+
+    const selectedMcp = new Set(mcpSelection as string[]);
+    for (const agent of agents) {
+      const selected = selectedMcp.has(agent.id);
+      for (const configPath of agent.getMcpConfigPaths()) {
+        if (selected) {
+          const result = await configureMcp(agent, configPath);
+          if (result.paths.length > 0) log.success(`MCP configured for ${agent.displayName}: ${configPath}`);
+        } else {
+          await removeMcpIfPresent(agent, configPath);
+        }
       }
     }
-  }
 
-  const hookAgents = agents.filter((agent) => agent.supportsHooks);
-  const hookSelection = await multiselect({
-    message: 'Select agents for hooks configuration:',
-    options: hookAgents.map((agent) => ({
-      value: agent.id,
-      label: agent.displayName,
-      hint: formatPaths(agent.getHooksConfigPaths(), selectedMcp.has(agent.id) ? 'MCP selected' : 'MCP not selected'),
-    })),
-    required: false,
-  });
-  if (isCancel(hookSelection)) {
-    log.info('MCP configuration completed; hooks configuration cancelled.');
+    const hookAgents = agents.filter((agent) => agent.supportsHooks && selectedMcp.has(agent.id));
+    let hookSelection: readonly string[] = [];
+    if (hookAgents.length > 0) {
+      const selection = await multiselect({
+        message: 'Select agents for hooks configuration:',
+        options: [
+          {
+            value: BACK_TO_MCP_SELECTION,
+            label: '← Back to MCP selection',
+            hint: 'Choose this if you forgot to enable MCP for another agent',
+          },
+          ...hookAgents.map((agent) => ({
+            value: agent.id,
+            label: agent.displayName,
+            hint: formatPaths(agent.getHooksConfigPaths(), 'MCP selected'),
+          })),
+        ],
+        required: false,
+      });
+      if (isCancel(selection)) {
+        log.info('MCP configuration completed; hooks configuration cancelled.');
+        return;
+      }
+      hookSelection = selection as string[];
+    }
+    if (hookSelection.includes(BACK_TO_MCP_SELECTION)) continue;
+
+    const selectedHooks = new Set(hookSelection);
+    const proxyPath = getProxyPath();
+    for (const agent of agents.filter((candidate) => candidate.supportsHooks)) {
+      if (selectedHooks.has(agent.id) && selectedMcp.has(agent.id)) {
+        await configureHooks(agent, proxyPath);
+        log.success(`Hooks configured for ${agent.displayName}`);
+      } else {
+        await removeHooksIfPresent(agent);
+      }
+    }
+
+    log.success('Agent configuration completed.');
     return;
   }
-
-  const selectedHooks = new Set(hookSelection);
-  const proxyPath = getProxyPath();
-  for (const agent of hookAgents) {
-    if (selectedHooks.has(agent.id) && selectedMcp.has(agent.id)) {
-      await configureHooks(agent, proxyPath);
-      log.success(`Hooks configured for ${agent.displayName}`);
-    } else {
-      await removeHooksIfPresent(agent);
-    }
-  }
-
-  log.success('Agent configuration completed.');
 }
 
 export async function getConfigurationStatus(): Promise<

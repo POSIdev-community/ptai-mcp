@@ -12,7 +12,11 @@ const downloadBundle = vi.fn(async (options: { onProgress?: (p: { downloaded: nu
   options.onProgress?.({ downloaded: 1, total: 1 });
   return { archivePath: 'archive.zip', url: 'https://example.test/archive.zip' };
 });
-const unpackBundle = vi.fn(async () => undefined);
+const unpackBundle = vi.fn(async (...args: unknown[]) => {
+  const onProgress = args[3] as ((progress: { extracted: number; total: number }) => void) | undefined;
+  onProgress?.({ extracted: 1, total: 2 });
+  onProgress?.({ extracted: 2, total: 2 });
+});
 vi.mock('../src/utils/downloader.js', () => ({ downloadBundle, unpackBundle }));
 const killAnalyzerProcesses = vi.fn(async () => undefined);
 vi.mock('../src/utils/processes.js', () => ({ killAnalyzerProcesses }));
@@ -68,7 +72,7 @@ describe('install, update and uninstall commands', () => {
     // Assert
     expect(killAnalyzerProcesses).toHaveBeenCalled();
     expect(downloadBundle).toHaveBeenCalled();
-    expect(unpackBundle).toHaveBeenCalledWith('archive.zip', 'bundle-dir');
+    expect(unpackBundle).toHaveBeenCalledWith('archive.zip', 'bundle-dir', undefined, expect.any(Function));
     expect(rm).toHaveBeenCalledWith('archive.zip', { force: true });
     expect(configureCommand).toHaveBeenCalled();
   });
@@ -117,7 +121,7 @@ describe('install, update and uninstall commands', () => {
     await updateCommand();
 
     // Assert (Update)
-    expect(unpackBundle).toHaveBeenCalledWith('archive.zip', 'bundle-dir');
+    expect(unpackBundle).toHaveBeenCalledWith('archive.zip', 'bundle-dir', undefined, expect.any(Function));
   });
 
   it('removes an installation after confirmation', async () => {

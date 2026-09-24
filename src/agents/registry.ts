@@ -111,7 +111,19 @@ export function getSupportedAgents(): AgentDefinition[] {
 }
 
 export function isAgentDetected(agent: AgentDefinition): boolean {
-  return agent.getMcpConfigPaths().some((configPath) => fs.existsSync(configPath));
+  // Match the host integrations: an agent is considered installed when its
+  // configuration directory exists, even before the agent has created the
+  // specific MCP file we manage.
+  return agent.getMcpConfigPaths().some((configPath) => {
+    if (fs.existsSync(configPath)) return true;
+
+    // A few agents keep their primary config directly in the home directory
+    // (for example ~/.claude.json). The home directory itself always exists
+    // and must not be treated as evidence that such an agent is installed.
+    const parent = path.resolve(path.dirname(configPath));
+    if (parent === path.resolve(home())) return false;
+    return fs.existsSync(parent);
+  });
 }
 
 function getWindsurfBasePath(fileName: string): string {
