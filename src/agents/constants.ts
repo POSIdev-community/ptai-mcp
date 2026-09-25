@@ -9,6 +9,7 @@ export const HOOK_EVENTS = {
   KIMI_START: 'UserPromptSubmit',
   CODEX_STOP: 'Stop',
   CODEX_START: 'UserPromptSubmit',
+  CODEX_TRUST_STOP: 'stop', // Codex normalizes event names to snake_case for trust hashing
   CODEX_TRUST_START: 'user_prompt_submit',
 } as const;
 

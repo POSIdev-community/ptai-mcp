@@ -121,7 +121,7 @@ async function configureCursorHooks(agent: AgentDefinition, proxyPath: string): 
   const start = ensureArray(hooks, HOOK_EVENTS.CURSOR_START);
   removeEntries(stop, [`hook --format ${AGENT_FORMATS.CURSOR}`]);
   removeEntries(start, [`hook-start --format ${AGENT_FORMATS.CURSOR}`]);
-  stop.push({ show_output: true, loop_limit: 1, timeout: 300, command: hookCommand(proxyPath, AGENT_FORMATS.CURSOR) });
+  stop.push({ show_output: true, loop_limit: 1, timeout: 600, command: hookCommand(proxyPath, AGENT_FORMATS.CURSOR) });
   start.push({
     show_output: false,
     loop_limit: 1,
@@ -181,11 +181,17 @@ async function configureKimiHooks(agent: AgentDefinition, proxyPath: string): Pr
         isOurHookCommand(String(hook.command ?? ''), identifier),
       ),
   );
-  filtered.push({ event: HOOK_EVENTS.KIMI_STOP, matcher: '.*', command: hookCommand(proxyPath, AGENT_FORMATS.KIMI) });
+  filtered.push({
+    event: HOOK_EVENTS.KIMI_STOP,
+    matcher: '.*',
+    command: hookCommand(proxyPath, AGENT_FORMATS.KIMI),
+    timeout: 600,
+  });
   filtered.push({
     event: HOOK_EVENTS.KIMI_START,
     matcher: '.*',
     command: hookCommand(proxyPath, AGENT_FORMATS.KIMI, true),
+    timeout: 600,
   });
   model.hooks = filtered;
   await writeToml(configPath, model);
@@ -207,7 +213,7 @@ async function configureCodexHooks(agent: AgentDefinition, proxyPath: string): P
   const command = hookCommand(proxyPath, AGENT_FORMATS.CODEX, true);
   start.push({
     matcher: '.*',
-    hooks: [{ type: 'command', command, command_windows: windowsHookCommand(proxyPath, AGENT_FORMATS.CODEX, true) }],
+    hooks: [{ type: 'command', command, commandWindows: windowsHookCommand(proxyPath, AGENT_FORMATS.CODEX, true) }],
   });
   await writeJson(hooksPath, model);
   await configureCodexTrust(agent, proxyPath, hooksPath);
@@ -236,15 +242,15 @@ async function configureCodexTrust(agent: AgentDefinition, proxyPath: string, ho
   const hooks = ensureRecord(model, 'hooks');
   const state = ensureRecord(hooks, 'state');
   const [stopHash, startHash] = codexTrustHashes(proxyPath);
-  state[`${path.resolve(hooksPath)}:${HOOK_EVENTS.CURSOR_STOP}:0:0`] = { trusted_hash: stopHash };
-  state[`${path.resolve(hooksPath)}:${HOOK_EVENTS.CODEX_TRUST_START}:0:0`] = { trusted_hash: startHash };
+  state[`${path.resolve(hooksPath)}:${HOOK_EVENTS.CODEX_TRUST_STOP}:0:0`] = { trusted_hash: stopHash, enabled: true };
+  state[`${path.resolve(hooksPath)}:${HOOK_EVENTS.CODEX_TRUST_START}:0:0`] = { trusted_hash: startHash, enabled: true };
   const features = ensureRecord(model, 'features');
   features.hooks = true;
   await writeToml(configPath, model);
 }
 
 function codexTrustHashes(proxyPath: string): [string, string] {
-  const stopHash = hookHash(HOOK_EVENTS.CURSOR_STOP, {
+  const stopHash = hookHash(HOOK_EVENTS.CODEX_TRUST_STOP, {
     type: 'mcp_tool',
     server: MCP_SERVER_NAME,
     tool: STOP_TOOL_NAME,
@@ -313,7 +319,7 @@ async function hasCodexHooks(filePath: string, configPath: string, proxyPath: st
   const config = await readTomlOptional(configPath);
   const state = asRecord(asRecord(config?.hooks)?.state);
   const prefix = path.resolve(filePath);
-  const stopState = asRecord(state?.[`${prefix}:${HOOK_EVENTS.CURSOR_STOP}:0:0`]);
+  const stopState = asRecord(state?.[`${prefix}:${HOOK_EVENTS.CODEX_TRUST_STOP}:0:0`]);
   const startState = asRecord(state?.[`${prefix}:${HOOK_EVENTS.CODEX_TRUST_START}:0:0`]);
   const [expectedStopHash, expectedStartHash] = codexTrustHashes(proxyPath);
   return stopState?.trusted_hash === expectedStopHash && startState?.trusted_hash === expectedStartHash;
@@ -391,7 +397,10 @@ async function removeCodexTrustState(agent: AgentDefinition): Promise<boolean> {
   if (!model || !state) return false;
 
   const hooksPath = path.resolve(agent.getHooksConfigPaths()[0]);
-  const keys = [`${hooksPath}:${HOOK_EVENTS.CURSOR_STOP}:0:0`, `${hooksPath}:${HOOK_EVENTS.CODEX_TRUST_START}:0:0`];
+  const keys = [
+    `${hooksPath}:${HOOK_EVENTS.CODEX_TRUST_STOP}:0:0`,
+    `${hooksPath}:${HOOK_EVENTS.CODEX_TRUST_START}:0:0`,
+  ];
   let changed = false;
   for (const key of keys) {
     if (key in state) {

@@ -34,6 +34,11 @@
   "config": {
     "bundleVersion": "2.10.0.1428-develop"
   },
+  "os": [
+    "win32",
+    "linux",
+    "darwin"
+  ],
   "engines": {
     "node": ">=18"
   },

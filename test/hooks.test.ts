@@ -338,6 +338,103 @@ describe('hook configuration', () => {
     await fs.rm(root, { recursive: true, force: true });
   });
 
+  it('Codex trust state includes enabled: true and uses snake_case event keys', async () => {
+    // Arrange
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-codex-trust-detail-'));
+    const hooksPath = path.join(root, 'codex', 'hooks.json');
+    const configPath = path.join(root, 'codex', 'config.toml');
+    const codex = hookAgent(AGENT_IDS.CODEX, hooksPath, configPath);
+    const proxyPath = path.join(root, 'McpProxy.exe');
+
+    // Act
+    await configureHooks(codex, proxyPath);
+
+    // Assert — parse config.toml
+    const config = TOML.parse(await fs.readFile(configPath, 'utf8')) as Record<string, unknown>;
+    const hooks = config.hooks as Record<string, unknown>;
+    const state = hooks.state as Record<string, unknown>;
+
+    // Verify state keys use snake_case event names (matching Codex CLI internal normalization)
+    const resolvedHooksPath = path.resolve(hooksPath);
+    const stopKey = `${resolvedHooksPath}:stop:0:0`;
+    const startKey = `${resolvedHooksPath}:user_prompt_submit:0:0`;
+    expect(state).toHaveProperty(stopKey);
+    expect(state).toHaveProperty(startKey);
+
+    // Verify both entries have 'enabled: true' (required by Codex CLI)
+    const stopEntry = state[stopKey] as Record<string, unknown>;
+    const startEntry = state[startKey] as Record<string, unknown>;
+    expect(stopEntry.enabled).toBe(true);
+    expect(startEntry.enabled).toBe(true);
+
+    // Verify hashes are sha256 format
+    expect(stopEntry.trusted_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(startEntry.trusted_hash).toMatch(/^sha256:[0-9a-f]{64}$/);
+
+    // Verify hashes are different (stop is mcp_tool, start is command)
+    expect(stopEntry.trusted_hash).not.toBe(startEntry.trusted_hash);
+
+    // Verify features.hooks is enabled
+    expect((config.features as Record<string, unknown>).hooks).toBe(true);
+
+    // Cleanup
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('Codex trust hashes are deterministic across repeated configurations', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-codex-hash-det-'));
+    const hooksPath = path.join(root, 'codex', 'hooks.json');
+    const configPath = path.join(root, 'codex', 'config.toml');
+    const codex = hookAgent(AGENT_IDS.CODEX, hooksPath, configPath);
+    const proxyPath = path.join(root, 'McpProxy.exe');
+
+    // Configure twice
+    await configureHooks(codex, proxyPath);
+    const config1 = await fs.readFile(configPath, 'utf8');
+    await configureHooks(codex, proxyPath);
+    const config2 = await fs.readFile(configPath, 'utf8');
+
+    // Hashes must be identical
+    expect(config2).toBe(config1);
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('Codex hooks.json includes commandWindows field for start hook', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-codex-cmdwin-'));
+    const hooksPath = path.join(root, 'codex', 'hooks.json');
+    const codex = hookAgent(AGENT_IDS.CODEX, hooksPath, path.join(root, 'codex', 'config.toml'));
+    const proxyPath = path.join(root, 'McpProxy.exe');
+
+    await configureHooks(codex, proxyPath);
+    const hooks = JSON.parse(await fs.readFile(hooksPath, 'utf8'));
+    const startHooks = hooks.hooks.UserPromptSubmit;
+    expect(startHooks).toBeDefined();
+    const startInner = startHooks[0].hooks[0];
+    expect(startInner.type).toBe('command');
+    // Must use camelCase 'commandWindows' (not snake_case 'command_windows')
+    expect(startInner).toHaveProperty('commandWindows');
+    expect(startInner).not.toHaveProperty('command_windows');
+    expect(startInner.commandWindows).toContain('hook-start --format codex');
+
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('Kimi hooks include timeout: 600', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-kimi-timeout-'));
+    const kimi = hookAgent(
+      AGENT_IDS.KIMI_CODE,
+      path.join(root, 'kimi', 'config.toml'),
+      path.join(root, 'kimi-mcp.json'),
+    );
+    await configureHooks(kimi, path.join(root, 'McpProxy.exe'));
+    const config = TOML.parse(await fs.readFile(path.join(root, 'kimi', 'config.toml'), 'utf8'));
+    const hooks = config.hooks as Record<string, unknown>[];
+    for (const hook of hooks) {
+      expect(hook.timeout).toBe(600);
+    }
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
   it('keeps repeated configuration idempotent for every JSON/TOML hook format', async () => {
     for (const id of [
       AGENT_IDS.CURSOR,
