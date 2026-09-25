@@ -37,6 +37,7 @@ describe('bundle paths', () => {
 
   it('reads versions.json from the bundle directory', async () => {
     // Arrange
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-paths-'));
     vi.stubEnv('LOCALAPPDATA', root);
     const bundleDir = getBundleDir();
@@ -79,6 +80,7 @@ describe('bundle paths', () => {
 
   it('returns null for malformed versions and exposes the package bundle version', async () => {
     // Arrange
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-invalid-'));
     vi.stubEnv('LOCALAPPDATA', root);
     await fs.mkdir(getBundleDir(), { recursive: true });
@@ -93,6 +95,7 @@ describe('bundle paths', () => {
 
   it('handles absent versions and malformed or missing package metadata', () => {
     // Arrange
+    vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
     const root = path.join(os.tmpdir(), 'ptai-mcp-no-bundle');
     vi.stubEnv('LOCALAPPDATA', root);
 
