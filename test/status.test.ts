@@ -12,10 +12,11 @@ describe('status command', () => {
     await statusCommand();
 
     // Assert
-    expect(output.some((line) => line.startsWith('Bundle directory:'))).toBe(true);
-    expect(output.some((line) => line.startsWith('Proxy:'))).toBe(true);
-    expect(output.some((line) => line.startsWith('Expected version:'))).toBe(true);
-    expect(output.some((line) => line === 'Agents:' || line.startsWith('Agents: unsupported'))).toBe(true);
+    expect(output).toContain('PT AI MCP status');
+    expect(output).toContain('Analyzer bundle');
+    expect(output.some((line) => line.startsWith('  Location:'))).toBe(true);
+    expect(output.some((line) => line.startsWith('  Expected:'))).toBe(true);
+    expect(output.some((line) => line === 'Detected agents' || line.startsWith('Agents: unsupported'))).toBe(true);
     log.mockRestore();
   });
 
@@ -29,7 +30,7 @@ describe('status command', () => {
     await statusCommand();
 
     // Assert — Linux is now supported, so we should see the "Agents:" header instead of "unsupported"
-    expect(output.some((line) => line === 'Agents:')).toBe(true);
+    expect(output.some((line) => line === 'Detected agents')).toBe(true);
     expect(output.some((line) => line.includes('Cursor'))).toBe(true);
     log.mockRestore();
     platform.mockRestore();

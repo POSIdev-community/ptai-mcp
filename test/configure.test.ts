@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 const multiselect = vi.fn();
+const select = vi.fn();
 const log = { info: vi.fn(), success: vi.fn(), warn: vi.fn() };
 const configureMcp = vi.fn(async () => ({ paths: ['config'] }));
 const removeMcp = vi.fn(async () => undefined);
@@ -29,6 +30,7 @@ let detectedAgentIds = new Set(agents.map((agent) => agent.id));
 
 vi.mock('@clack/prompts', () => ({
   multiselect,
+  select,
   isCancel: (value: unknown) => value === Symbol.for('cancel'),
   log,
 }));
@@ -48,6 +50,7 @@ describe('configure command', () => {
     // Arrange
     isMcpConfigured.mockResolvedValue(true);
     multiselect.mockReset().mockResolvedValueOnce(['alpha']).mockResolvedValueOnce(['alpha']);
+    select.mockReset().mockResolvedValue('__configure_hooks__');
 
     // Act
     await configureCommand();
@@ -56,6 +59,8 @@ describe('configure command', () => {
     expect(configureMcp).toHaveBeenCalledWith(agents[0], 'alpha.json');
     expect(removeMcp).toHaveBeenCalledWith(agents[1], 'beta.json');
     expect(configureHooks).toHaveBeenCalledWith(agents[0], 'proxy.exe');
+    expect(multiselect.mock.calls[0][0].initialValues).toEqual(['alpha', 'beta']);
+    expect(multiselect.mock.calls[1][0].initialValues).toEqual(['alpha']);
     expect(log.success).toHaveBeenCalled();
   });
 
@@ -63,6 +68,7 @@ describe('configure command', () => {
     // Arrange
     detectedAgentIds = new Set(['alpha']);
     multiselect.mockReset().mockResolvedValueOnce(['alpha']).mockResolvedValueOnce([]);
+    select.mockReset().mockResolvedValue('__configure_hooks__');
 
     // Act
     await configureCommand();
@@ -70,8 +76,8 @@ describe('configure command', () => {
     // Assert
     expect(multiselect).toHaveBeenCalledTimes(2);
     expect(multiselect.mock.calls[0][0].options).toHaveLength(1);
-    expect(multiselect.mock.calls[1][0].options).toHaveLength(2);
-    expect(multiselect.mock.calls[1][0].options[1].value).toBe('alpha');
+    expect(multiselect.mock.calls[1][0].options).toHaveLength(1);
+    expect(multiselect.mock.calls[1][0].options[0].value).toBe('alpha');
 
     detectedAgentIds = new Set(agents.map((agent) => agent.id));
   });
@@ -79,14 +85,15 @@ describe('configure command', () => {
   it('can return from hooks selection to choose MCP agents again', async () => {
     // Arrange
     configureMcp.mockClear();
-    multiselect.mockReset().mockResolvedValueOnce(['alpha']).mockResolvedValueOnce([BACK_TO_MCP_SELECTION]);
-    multiselect.mockResolvedValueOnce(['alpha']).mockResolvedValueOnce([]);
+    multiselect.mockReset().mockResolvedValueOnce(['alpha']).mockResolvedValueOnce(['alpha']);
+    select.mockReset().mockResolvedValueOnce(BACK_TO_MCP_SELECTION).mockResolvedValueOnce('__configure_hooks__');
+    multiselect.mockResolvedValueOnce([]);
 
     // Act
     await configureCommand();
 
     // Assert
-    expect(multiselect).toHaveBeenCalledTimes(4);
+    expect(multiselect).toHaveBeenCalledTimes(3);
     expect(configureMcp).toHaveBeenCalledTimes(2);
   });
 
@@ -131,6 +138,7 @@ describe('configure command', () => {
     isMcpConfigured.mockRejectedValue(new Error('read failed'));
     isHooksConfigured.mockRejectedValue('hook read failed');
     multiselect.mockReset().mockResolvedValueOnce([]).mockResolvedValueOnce([]);
+    select.mockReset().mockResolvedValue('__configure_hooks__');
 
     // Act
     await configureCommand();

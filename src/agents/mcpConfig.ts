@@ -2,9 +2,10 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import TOML from '@iarna/toml';
 import type { AgentDefinition } from './registry.js';
+import { isPtaiMcpLaunch, packageLaunch } from './launch.js';
 
 export const MCP_SERVER_NAME = 'ptai_analyzer';
-export const MCP_PACKAGE_NAME = '@posidev-community/ptai-mcp';
+export { MCP_PACKAGE_NAME } from './launch.js';
 
 export interface McpServerConfig {
   command: string;
@@ -64,19 +65,10 @@ export async function isMcpConfigured(agent: AgentDefinition, configPath: string
         : (JSON.parse(source) as Record<string, unknown>);
     const servers = asRecord(agent.format === 'toml' ? model.mcp_servers : model.mcpServers);
     const server = servers ? asRecord(servers[MCP_SERVER_NAME]) : undefined;
-    if (!server || server.command !== 'npx') return false;
-    const args = Array.isArray(server.args) ? server.args : [];
-    return args.includes('-y') && args.includes(MCP_PACKAGE_NAME) && args.includes('start');
+    return isPtaiMcpLaunch(server);
   } catch {
     return false;
   }
-}
-
-function buildServerConfig(): McpServerConfig {
-  return {
-    command: 'npx',
-    args: ['-y', MCP_PACKAGE_NAME, 'start'],
-  };
 }
 
 async function writeJsonMcpConfig(configPath: string): Promise<McpConfigResult> {
@@ -84,7 +76,7 @@ async function writeJsonMcpConfig(configPath: string): Promise<McpConfigResult> 
   const model = source === null || source.trim() === '' ? {} : (JSON.parse(source) as Record<string, unknown>);
   const servers = ensureRecord(model, 'mcpServers');
   const previous = asRecord(servers[MCP_SERVER_NAME]);
-  const desired = { ...(previous ?? {}), ...buildServerConfig() };
+  const desired = { ...(previous ?? {}), ...packageLaunch() };
   const changed = JSON.stringify(previous) !== JSON.stringify(desired);
   if (changed) {
     servers[MCP_SERVER_NAME] = desired;
@@ -98,7 +90,7 @@ async function writeTomlMcpConfig(configPath: string): Promise<McpConfigResult> 
   const model = source === null || source.trim() === '' ? {} : (TOML.parse(source) as Record<string, unknown>);
   const servers = ensureRecord(model, 'mcp_servers');
   const previous = asRecord(servers[MCP_SERVER_NAME]);
-  const desired = { ...(previous ?? {}), ...buildServerConfig() };
+  const desired = { ...(previous ?? {}), ...packageLaunch() };
   const changed = JSON.stringify(previous) !== JSON.stringify(desired);
   if (changed) {
     servers[MCP_SERVER_NAME] = desired;

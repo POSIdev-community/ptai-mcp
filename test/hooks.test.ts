@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import TOML from '@iarna/toml';
 import { configureHooks, isHooksConfigured, removeHooks } from '../src/agents/hooksConfig.js';
 import { AGENT_IDS } from '../src/agents/constants.js';
 
@@ -67,6 +68,89 @@ describe('hook configuration', () => {
     expect(removed.custom).toBe(true);
     expect(removed.hooks.stop).toHaveLength(1);
     await expect(fs.access(path.join(cursorDir, 'rules', 'pt_ai_security.mdc'))).rejects.toThrow();
+
+    // Cleanup
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('detects and removes Cursor hooks installed through the npm package form', async () => {
+    // Arrange
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-hooks-package-'));
+    const hooksPath = path.join(root, '.cursor', 'hooks.json');
+    const agent = hookAgent(AGENT_IDS.CURSOR, hooksPath, path.join(root, 'mcp.json'));
+    await fs.mkdir(path.dirname(hooksPath), { recursive: true });
+    await fs.writeFile(
+      hooksPath,
+      JSON.stringify({
+        hooks: {
+          stop: [{ command: 'npx -y @posidev-community/ptai-mcp hook --format cursor' }],
+          beforeSubmitPrompt: [{ command: 'npx -y @posidev-community/ptai-mcp hook-start --format cursor' }],
+        },
+      }),
+    );
+
+    // Act / Assert
+    expect(await isHooksConfigured(agent)).toBe(true);
+    expect(await removeHooks(agent)).toBe(true);
+    const removed = JSON.parse(await fs.readFile(hooksPath, 'utf8'));
+    expect(removed.hooks.stop).toEqual([]);
+    expect(removed.hooks.beforeSubmitPrompt).toEqual([]);
+
+    // Cleanup
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('detects and removes Cursor hooks installed with a direct proxy path', async () => {
+    // Arrange
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-hooks-direct-'));
+    const hooksPath = path.join(root, '.cursor', 'hooks.json');
+    const agent = hookAgent(AGENT_IDS.CURSOR, hooksPath, path.join(root, 'mcp.json'));
+    const proxyPath = 'C:\\Program Files\\PT AI\\McpProxy.exe';
+    await fs.mkdir(path.dirname(hooksPath), { recursive: true });
+    await fs.writeFile(
+      hooksPath,
+      JSON.stringify({
+        hooks: {
+          stop: [{ command: `"${proxyPath}" hook --format cursor` }],
+          beforeSubmitPrompt: [{ command: `"${proxyPath}" hook-start --format cursor` }],
+        },
+      }),
+    );
+
+    // Act / Assert
+    expect(await isHooksConfigured(agent)).toBe(true);
+    expect(await removeHooks(agent)).toBe(true);
+    const removed = JSON.parse(await fs.readFile(hooksPath, 'utf8'));
+    expect(removed.hooks.stop).toEqual([]);
+    expect(removed.hooks.beforeSubmitPrompt).toEqual([]);
+
+    // Cleanup
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('does not detect or remove hooks from another executable with the same format', async () => {
+    // Arrange
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-hooks-unrelated-'));
+    const hooksPath = path.join(root, '.cursor', 'hooks.json');
+    const agent = hookAgent(AGENT_IDS.CURSOR, hooksPath, path.join(root, 'mcp.json'));
+    const otherProxyPath = 'C:\\Program Files\\Other Vendor\\OtherProxy.exe';
+    await fs.mkdir(path.dirname(hooksPath), { recursive: true });
+    await fs.writeFile(
+      hooksPath,
+      JSON.stringify({
+        hooks: {
+          stop: [{ command: `"${otherProxyPath}" hook --format cursor` }],
+          beforeSubmitPrompt: [{ command: `"${otherProxyPath}" hook-start --format cursor` }],
+        },
+      }),
+    );
+
+    // Act / Assert
+    expect(await isHooksConfigured(agent)).toBe(false);
+    expect(await removeHooks(agent)).toBe(false);
+    const unchanged = JSON.parse(await fs.readFile(hooksPath, 'utf8'));
+    expect(unchanged.hooks.stop).toHaveLength(1);
+    expect(unchanged.hooks.beforeSubmitPrompt).toHaveLength(1);
 
     // Cleanup
     await fs.rm(root, { recursive: true, force: true });
@@ -218,12 +302,21 @@ describe('hook configuration', () => {
     );
     const proxyPath = path.join(root, 'McpProxy.exe');
     await configureHooks(codex, proxyPath);
+    const configPath = codex.getMcpConfigPaths()[0];
+    const config = TOML.parse(await fs.readFile(configPath, 'utf8')) as Record<string, unknown>;
+    const hooks = config.hooks as Record<string, unknown>;
+    const state = hooks.state as Record<string, unknown>;
+    const unrelatedKey = `${path.join(root, 'other', 'hooks.json')}:Stop:0:0`;
+    state[unrelatedKey] = { trusted_hash: 'unrelated' };
+    await fs.writeFile(configPath, TOML.stringify(config as TOML.JsonMap));
 
     // Act
     await removeHooks(codex);
 
     // Assert
     expect(await isHooksConfigured(codex, proxyPath)).toBe(false);
+    const remaining = TOML.parse(await fs.readFile(configPath, 'utf8')) as Record<string, unknown>;
+    expect((remaining.hooks as Record<string, unknown>).state).toHaveProperty(unrelatedKey);
 
     // Cleanup
     await fs.rm(root, { recursive: true, force: true });

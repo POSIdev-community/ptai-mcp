@@ -89,6 +89,23 @@ describe('install, update and uninstall commands', () => {
     expect(downloadBundle).not.toHaveBeenCalled();
   });
 
+  it('does not reinstall an already current bundle', async () => {
+    // Arrange
+    expectedVersion = '1.0.0';
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+
+    // Act
+    await installCommand();
+    await updateCommand();
+
+    // Assert
+    expect(downloadBundle).not.toHaveBeenCalled();
+    expect(log.info).toHaveBeenCalledWith('Bundle 1.0.0 is already up to date.');
+
+    // Cleanup
+    expectedVersion = '2.0.0';
+  });
+
   it('cancels an existing installation', async () => {
     // Arrange
     vi.spyOn(fs, 'existsSync').mockReturnValue(true);

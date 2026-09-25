@@ -203,8 +203,58 @@ describe('MCP config writers', () => {
 
     // Assert
     expect(removeResult).toBe(true);
+    expect(await isMcpConfigured(agent, configPath)).toBe(false);
     const content = await fs.readFile(configPath, 'utf8');
     expect(JSON.parse(content).mcpServers[MCP_SERVER_NAME]).toBeUndefined();
+
+    // Cleanup
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it('detects the bundled full-path MCP representation as well as the npm representation', async () => {
+    // Arrange
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-representations-'));
+    const configPath = path.join(root, 'mcp.json');
+    const agent = AGENTS.find((candidate) => candidate.id === AGENT_IDS.CURSOR)!;
+
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          [MCP_SERVER_NAME]: {
+            command: 'cmd',
+            args: ['/c', 'C:\\Program Files\\PT AI\\McpProxy.exe'],
+          },
+        },
+      }),
+    );
+
+    // Act / Assert — bundled/full-path form
+    expect(await isMcpConfigured(agent, configPath)).toBe(true);
+
+    // Act / Assert — standalone npm form
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          [MCP_SERVER_NAME]: {
+            command: 'npx',
+            args: ['-y', MCP_PACKAGE_NAME, 'start'],
+          },
+        },
+      }),
+    );
+    expect(await isMcpConfigured(agent, configPath)).toBe(true);
+
+    await fs.writeFile(
+      configPath,
+      JSON.stringify({
+        mcpServers: {
+          [MCP_SERVER_NAME]: { command: 'C:\\Program Files\\Other Vendor\\OtherProxy.exe', args: ['start'] },
+        },
+      }),
+    );
+    expect(await isMcpConfigured(agent, configPath)).toBe(false);
 
     // Cleanup
     await fs.rm(root, { recursive: true, force: true });

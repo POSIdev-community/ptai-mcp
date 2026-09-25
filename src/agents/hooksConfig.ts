@@ -4,101 +4,113 @@ import path from 'node:path';
 import TOML from '@iarna/toml';
 import type { AgentDefinition } from './registry.js';
 import { MCP_SERVER_NAME } from './mcpConfig.js';
+import {
+  bundleLaunch,
+  hookCommand as formatHookCommand,
+  isOurHookCommand as isOurLaunchHookCommand,
+  windowsHookCommand as formatWindowsHookCommand,
+} from './launch.js';
 import { appendRules, deleteStandaloneRules, removeRules, writeStandaloneRules } from './rules.js';
 import { HOOK_EVENTS, AGENT_FORMATS, STOP_TOOL_NAME, AGENT_IDS } from './constants.js';
 import { getProxyPath } from '../utils/paths.js';
 
 export async function configureHooks(agent: AgentDefinition, proxyPath: string): Promise<boolean> {
-  switch (agent.id) {
-    case AGENT_IDS.CURSOR:
-      return configureCursorHooks(agent, proxyPath);
-    case AGENT_IDS.CLAUDE_CODE:
-      return configureClaudeCodeHooks(agent, proxyPath);
-    case AGENT_IDS.WINDSURF:
-      return configureWindsurfHooks(agent, proxyPath);
-    case AGENT_IDS.KIMI_CODE:
-      return configureKimiHooks(agent, proxyPath);
-    case AGENT_IDS.CODEX:
-      return configureCodexHooks(agent, proxyPath);
-    case AGENT_IDS.ANTIGRAVITY:
-      return configureAntigravityHooks();
-    case AGENT_IDS.GEMINI_CLI:
-      return configureGeminiCliHooks();
-    default:
-      return false;
-  }
+  return (HOOK_ADAPTERS[agent.id]?.configure ?? unsupportedConfigure)(agent, proxyPath);
 }
 
 export async function isHooksConfigured(agent: AgentDefinition, proxyPath = getProxyPath()): Promise<boolean> {
   try {
-    switch (agent.id) {
-      case AGENT_IDS.CURSOR:
-        return hasJsonHooks(
-          agent.getHooksConfigPaths()[0],
-          HOOK_EVENTS.CURSOR_STOP,
-          HOOK_EVENTS.CURSOR_START,
-          AGENT_FORMATS.CURSOR,
-        );
-      case AGENT_IDS.CLAUDE_CODE:
-        return hasClaudeCodeHooks(agent.getHooksConfigPaths()[0]);
-      case AGENT_IDS.WINDSURF:
-        return hasJsonHooks(
-          agent.getHooksConfigPaths()[0],
-          HOOK_EVENTS.WINDSURF_STOP,
-          HOOK_EVENTS.WINDSURF_START,
-          AGENT_FORMATS.WINDSURF,
-        );
-      case AGENT_IDS.KIMI_CODE:
-        return hasKimiHooks(agent.getHooksConfigPaths()[0]);
-      case AGENT_IDS.CODEX:
-        return hasCodexHooks(agent.getHooksConfigPaths()[0], agent.getMcpConfigPaths()[0], proxyPath);
-      case AGENT_IDS.ANTIGRAVITY:
-        return (
-          (
-            await readOptional(path.join(process.env.USERPROFILE || process.env.HOME || '', '.gemini', 'GEMINI.md'))
-          )?.includes('PT AI Security Rules') === true
-        );
-      case AGENT_IDS.GEMINI_CLI:
-        return (
-          (
-            await readOptional(path.join(process.env.USERPROFILE || process.env.HOME || '', '.gemini', 'GEMINI.md'))
-          )?.includes('PT AI Security Rules') === true
-        );
-      default:
-        return false;
-    }
+    return (await HOOK_ADAPTERS[agent.id]?.isConfigured?.(agent, proxyPath)) ?? false;
   } catch {
     return false;
   }
 }
 
 export async function removeHooks(agent: AgentDefinition): Promise<boolean> {
-  switch (agent.id) {
-    case AGENT_IDS.CURSOR:
-      return removeJsonHooks(
+  return (HOOK_ADAPTERS[agent.id]?.remove ?? unsupportedRemove)(agent);
+}
+
+type HookAdapter = {
+  configure: (agent: AgentDefinition, proxyPath: string) => Promise<boolean>;
+  isConfigured: (agent: AgentDefinition, proxyPath: string) => Promise<boolean>;
+  remove: (agent: AgentDefinition) => Promise<boolean>;
+};
+
+const HOOK_ADAPTERS: Readonly<Record<string, HookAdapter>> = {
+  [AGENT_IDS.CURSOR]: {
+    configure: configureCursorHooks,
+    isConfigured: (agent) =>
+      hasJsonHooks(
+        agent.getHooksConfigPaths()[0],
+        HOOK_EVENTS.CURSOR_STOP,
+        HOOK_EVENTS.CURSOR_START,
+        AGENT_FORMATS.CURSOR,
+      ),
+    remove: (agent) =>
+      removeJsonHooks(
         agent.getHooksConfigPaths()[0],
         [HOOK_EVENTS.CURSOR_STOP, HOOK_EVENTS.CURSOR_START],
         [`hook --format ${AGENT_FORMATS.CURSOR}`, `hook-start --format ${AGENT_FORMATS.CURSOR}`],
-      );
-    case AGENT_IDS.CLAUDE_CODE:
-      return removeClaudeCodeHooks(agent.getHooksConfigPaths()[0]);
-    case AGENT_IDS.WINDSURF:
-      return removeJsonHooks(
+      ),
+  },
+  [AGENT_IDS.CLAUDE_CODE]: {
+    configure: configureClaudeCodeHooks,
+    isConfigured: (agent) => hasClaudeCodeHooks(agent.getHooksConfigPaths()[0]),
+    remove: (agent) => removeClaudeCodeHooks(agent.getHooksConfigPaths()[0]),
+  },
+  [AGENT_IDS.WINDSURF]: {
+    configure: configureWindsurfHooks,
+    isConfigured: (agent) =>
+      hasJsonHooks(
+        agent.getHooksConfigPaths()[0],
+        HOOK_EVENTS.WINDSURF_STOP,
+        HOOK_EVENTS.WINDSURF_START,
+        AGENT_FORMATS.WINDSURF,
+      ),
+    remove: (agent) =>
+      removeJsonHooks(
         agent.getHooksConfigPaths()[0],
         [HOOK_EVENTS.WINDSURF_STOP, HOOK_EVENTS.WINDSURF_START],
         [`hook --format ${AGENT_FORMATS.WINDSURF}`, `hook-start --format ${AGENT_FORMATS.WINDSURF}`],
-      );
-    case AGENT_IDS.KIMI_CODE:
-      return removeKimiHooks(agent.getHooksConfigPaths()[0]);
-    case AGENT_IDS.CODEX:
-      return removeCodexHooks(agent);
-    case AGENT_IDS.ANTIGRAVITY:
-      return removeAntigravityHooks();
-    case AGENT_IDS.GEMINI_CLI:
-      return removeGeminiCliHooks();
-    default:
-      return false;
-  }
+      ),
+  },
+  [AGENT_IDS.KIMI_CODE]: {
+    configure: configureKimiHooks,
+    isConfigured: (agent) => hasKimiHooks(agent.getHooksConfigPaths()[0]),
+    remove: (agent) => removeKimiHooks(agent.getHooksConfigPaths()[0]),
+  },
+  [AGENT_IDS.CODEX]: {
+    configure: configureCodexHooks,
+    isConfigured: (agent, proxyPath) =>
+      hasCodexHooks(agent.getHooksConfigPaths()[0], agent.getMcpConfigPaths()[0], proxyPath),
+    remove: removeCodexHooks,
+  },
+  [AGENT_IDS.ANTIGRAVITY]: {
+    configure: configureAntigravityHooks,
+    isConfigured: () => hasGeminiRules(),
+    remove: removeAntigravityHooks,
+  },
+  [AGENT_IDS.GEMINI_CLI]: {
+    configure: configureGeminiCliHooks,
+    isConfigured: () => hasGeminiRules(),
+    remove: removeGeminiCliHooks,
+  },
+};
+
+async function unsupportedConfigure(): Promise<boolean> {
+  return false;
+}
+
+async function unsupportedRemove(): Promise<boolean> {
+  return false;
+}
+
+async function hasGeminiRules(): Promise<boolean> {
+  return (
+    (
+      await readOptional(path.join(process.env.USERPROFILE || process.env.HOME || '', '.gemini', 'GEMINI.md'))
+    )?.includes('PT AI Security Rules') === true
+  );
 }
 
 async function configureCursorHooks(agent: AgentDefinition, proxyPath: string): Promise<boolean> {
@@ -128,8 +140,8 @@ async function configureClaudeCodeHooks(agent: AgentDefinition, proxyPath: strin
   const hooks = ensureRecord(model, 'hooks');
   const stop = ensureArray(hooks, HOOK_EVENTS.CLAUDE_STOP);
   const start = ensureArray(hooks, HOOK_EVENTS.CLAUDE_START);
-  removeClaudeEntries(stop, STOP_TOOL_NAME);
-  removeClaudeEntries(start, `hook-start --format ${AGENT_FORMATS.CLAUDE_CODE}`);
+  removeMcpToolEntries(stop, MCP_SERVER_NAME, STOP_TOOL_NAME);
+  removeCommandEntries(start, `hook-start --format ${AGENT_FORMATS.CLAUDE_CODE}`);
   stop.push({
     matcher: '.*',
     hooks: [
@@ -165,10 +177,9 @@ async function configureKimiHooks(agent: AgentDefinition, proxyPath: string): Pr
   const hooks = Array.isArray(model.hooks) ? (model.hooks as Record<string, unknown>[]) : [];
   const filtered = hooks.filter(
     (hook) =>
-      !endsWithAny(String(hook.command ?? ''), [
-        `hook --format ${AGENT_FORMATS.KIMI}`,
-        `hook-start --format ${AGENT_FORMATS.KIMI}`,
-      ]),
+      ![`hook --format ${AGENT_FORMATS.KIMI}`, `hook-start --format ${AGENT_FORMATS.KIMI}`].some((identifier) =>
+        isOurHookCommand(String(hook.command ?? ''), identifier),
+      ),
   );
   filtered.push({ event: HOOK_EVENTS.KIMI_STOP, matcher: '.*', command: hookCommand(proxyPath, AGENT_FORMATS.KIMI) });
   filtered.push({
@@ -187,8 +198,8 @@ async function configureCodexHooks(agent: AgentDefinition, proxyPath: string): P
   const hooks = ensureRecord(model, 'hooks');
   const stop = ensureArray(hooks, HOOK_EVENTS.CODEX_STOP);
   const start = ensureArray(hooks, HOOK_EVENTS.CODEX_START);
-  removeClaudeEntries(stop, STOP_TOOL_NAME);
-  removeClaudeEntries(start, `hook-start --format ${AGENT_FORMATS.CODEX}`);
+  removeMcpToolEntries(stop, MCP_SERVER_NAME, STOP_TOOL_NAME);
+  removeCommandEntries(start, `hook-start --format ${AGENT_FORMATS.CODEX}`);
   stop.push({
     matcher: '.*',
     hooks: [{ type: 'mcp_tool', server: MCP_SERVER_NAME, tool: STOP_TOOL_NAME, input: hookInput(AGENT_FORMATS.CODEX) }],
@@ -279,12 +290,12 @@ async function hasKimiHooks(filePath: string): Promise<boolean> {
     hooks.some(
       (hook) =>
         hook.event === HOOK_EVENTS.KIMI_STOP &&
-        String(hook.command ?? '').endsWith(`hook --format ${AGENT_FORMATS.KIMI}`),
+        isOurHookCommand(String(hook.command ?? ''), `hook --format ${AGENT_FORMATS.KIMI}`),
     ) &&
     hooks.some(
       (hook) =>
         hook.event === HOOK_EVENTS.KIMI_START &&
-        String(hook.command ?? '').endsWith(`hook-start --format ${AGENT_FORMATS.KIMI}`),
+        isOurHookCommand(String(hook.command ?? ''), `hook-start --format ${AGENT_FORMATS.KIMI}`),
     )
   );
 }
@@ -316,9 +327,7 @@ async function removeJsonHooks(filePath: string, keys: string[], identifiers: st
   let changed = false;
   for (const key of keys) {
     const array = Array.isArray(hooks[key]) ? (hooks[key] as unknown[]) : [];
-    const filtered = array.filter(
-      (entry) => !identifiers.some((identifier) => JSON.stringify(entry).includes(identifier)),
-    );
+    const filtered = array.filter((entry) => !identifiers.some((identifier) => hasOurHook(entry, identifier)));
     changed ||= filtered.length !== array.length;
     hooks[key] = filtered;
   }
@@ -337,11 +346,13 @@ async function removeClaudeCodeHooks(filePath: string): Promise<boolean> {
   let changed = false;
   for (const key of [HOOK_EVENTS.CLAUDE_STOP, HOOK_EVENTS.CLAUDE_START]) {
     const array = Array.isArray(hooks[key]) ? (hooks[key] as unknown[]) : [];
-    const filtered = array.filter(
-      (entry) =>
-        !JSON.stringify(entry).includes('ptai_analyzer') &&
-        !JSON.stringify(entry).includes(`hook-start --format ${AGENT_FORMATS.CLAUDE_CODE}`),
-    );
+    const filtered = array.filter((entry) => {
+      const isOurStopHook =
+        key === HOOK_EVENTS.CLAUDE_STOP && isOurMcpToolEntry(entry, MCP_SERVER_NAME, STOP_TOOL_NAME);
+      const isOurStartHook =
+        key === HOOK_EVENTS.CLAUDE_START && hasOurHook(entry, `hook-start --format ${AGENT_FORMATS.CLAUDE_CODE}`);
+      return !isOurStopHook && !isOurStartHook;
+    });
     changed ||= filtered.length !== array.length;
     hooks[key] = filtered;
   }
@@ -355,10 +366,9 @@ async function removeKimiHooks(filePath: string): Promise<boolean> {
   const hooks = Array.isArray(model.hooks) ? (model.hooks as Record<string, unknown>[]) : [];
   const filtered = hooks.filter(
     (hook) =>
-      !endsWithAny(String(hook.command ?? ''), [
-        `hook --format ${AGENT_FORMATS.KIMI}`,
-        `hook-start --format ${AGENT_FORMATS.KIMI}`,
-      ]),
+      ![`hook --format ${AGENT_FORMATS.KIMI}`, `hook-start --format ${AGENT_FORMATS.KIMI}`].some((identifier) =>
+        isOurHookCommand(String(hook.command ?? ''), identifier),
+      ),
   );
   if (filtered.length === hooks.length) return false;
   model.hooks = filtered;
@@ -369,20 +379,27 @@ async function removeKimiHooks(filePath: string): Promise<boolean> {
 async function removeCodexHooks(agent: AgentDefinition): Promise<boolean> {
   const filePath = agent.getHooksConfigPaths()[0];
   const changed = await removeClaudeCodeHooks(filePath);
-  {
-    const configPath = agent.getMcpConfigPaths()[0];
-    const model = await readTomlOptional(configPath);
-    if (model?.hooks && typeof model.hooks === 'object') {
-      const hooks = model.hooks as Record<string, unknown>;
-      if (hooks.state && typeof hooks.state === 'object') {
-        const state = hooks.state as Record<string, unknown>;
-        for (const key of Object.keys(state)) {
-          if (key.includes(`${path.sep}hooks.json:`) || key.includes('hooks.json:')) delete state[key];
-        }
-        await writeToml(configPath, model);
-      }
+  const trustStateChanged = await removeCodexTrustState(agent);
+  return changed || trustStateChanged;
+}
+
+async function removeCodexTrustState(agent: AgentDefinition): Promise<boolean> {
+  const configPath = agent.getMcpConfigPaths()[0];
+  const model = await readTomlOptional(configPath);
+  const hooks = asRecord(model?.hooks);
+  const state = asRecord(hooks?.state);
+  if (!model || !state) return false;
+
+  const hooksPath = path.resolve(agent.getHooksConfigPaths()[0]);
+  const keys = [`${hooksPath}:${HOOK_EVENTS.CURSOR_STOP}:0:0`, `${hooksPath}:${HOOK_EVENTS.CODEX_TRUST_START}:0:0`];
+  let changed = false;
+  for (const key of keys) {
+    if (key in state) {
+      delete state[key];
+      changed = true;
     }
   }
+  if (changed) await writeToml(configPath, model);
   return changed;
 }
 
@@ -400,12 +417,11 @@ async function removeGeminiCliHooks(): Promise<boolean> {
 }
 
 function hookCommand(proxyPath: string, format: string, start = false): string {
-  const command = `${proxyPath} ${start ? 'hook-start' : 'hook'} --format ${format}`;
-  return process.platform === 'win32' ? `"${proxyPath}" ${start ? 'hook-start' : 'hook'} --format ${format}` : command;
+  return formatHookCommand(bundleLaunch(proxyPath, [start ? 'hook-start' : 'hook', '--format', format]));
 }
 
 function windowsHookCommand(proxyPath: string, format: string, start = false): string {
-  return `powershell.exe -NoProfile -NonInteractive -Command "& '${proxyPath.replaceAll("'", "''")}' ${start ? 'hook-start' : 'hook'} --format ${format}"`;
+  return formatWindowsHookCommand(bundleLaunch(proxyPath, [start ? 'hook-start' : 'hook', '--format', format]));
 }
 
 function windsurfEntry(proxyPath: string, format: string, start = false): Record<string, unknown> {
@@ -424,33 +440,51 @@ function hookInput(format: string): Record<string, string> {
 }
 
 function hasMatching(value: unknown, identifier: string): boolean {
-  return Array.isArray(value) && value.some((entry) => JSON.stringify(entry).includes(identifier));
+  return Array.isArray(value) && value.some((entry) => hasOurHook(entry, identifier));
 }
 
 function hasNestedMcp(value: unknown, server: string, tool: string): boolean {
-  return (
-    Array.isArray(value) &&
-    value.some(
-      (entry) =>
-        JSON.stringify(entry).includes(`"server":"${server}"`) && JSON.stringify(entry).includes(`"tool":"${tool}"`),
-    )
-  );
+  return Array.isArray(value) && value.some((entry) => isOurMcpToolEntry(entry, server, tool));
 }
 
 function removeEntries(array: unknown[], identifiers: string[]): void {
   for (let i = array.length - 1; i >= 0; i -= 1) {
-    if (identifiers.some((identifier) => JSON.stringify(array[i]).includes(identifier))) array.splice(i, 1);
+    if (identifiers.some((identifier) => hasOurHook(array[i], identifier))) array.splice(i, 1);
   }
 }
 
-function removeClaudeEntries(array: unknown[], identifier: string): void {
+function removeCommandEntries(array: unknown[], identifier: string): void {
   for (let i = array.length - 1; i >= 0; i -= 1) {
-    if (JSON.stringify(array[i]).includes(identifier)) array.splice(i, 1);
+    if (hasOurHook(array[i], identifier)) array.splice(i, 1);
   }
 }
 
-function endsWithAny(value: string, identifiers: string[]): boolean {
-  return identifiers.some((identifier) => value.endsWith(identifier));
+function hasOurHook(value: unknown, identifier: string): boolean {
+  return stringValues(value).some((candidate) => isOurHookCommand(candidate, identifier));
+}
+
+function isOurHookCommand(command: string, identifier: string): boolean {
+  return isOurLaunchHookCommand(command, identifier);
+}
+
+function isOurMcpToolEntry(value: unknown, server: string, tool: string): boolean {
+  const record = asRecord(value);
+  return record?.server === server && record.tool === tool
+    ? true
+    : Array.isArray(record?.hooks) && record.hooks.some((entry) => isOurMcpToolEntry(entry, server, tool));
+}
+
+function removeMcpToolEntries(array: unknown[], server: string, tool: string): void {
+  for (let i = array.length - 1; i >= 0; i -= 1) {
+    if (isOurMcpToolEntry(array[i], server, tool)) array.splice(i, 1);
+  }
+}
+
+function stringValues(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(stringValues);
+  if (value && typeof value === 'object') return Object.values(value as Record<string, unknown>).flatMap(stringValues);
+  return [];
 }
 
 function ensureArray(parent: Record<string, unknown>, key: string): unknown[] {

@@ -177,3 +177,12 @@ npm run artifact
 This runs the complete verification first and creates a `.tgz` package in the
 repository root. The generated archive is a release artifact and is ignored by
 Git.
+
+Validate the packed artifact in a clean temporary npm installation:
+
+```bash
+npm run smoke:artifact
+```
+
+The package version is the single source of truth. `server.json` is synchronized
+from `package.json` during packing and checked by `npm run verify`.

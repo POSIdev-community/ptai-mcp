@@ -2,27 +2,69 @@ import fs from 'node:fs';
 import { getConfigurationStatus } from './configure.js';
 import { getBundleDir, getExpectedBundleVersion, getProxyPath, readVersionsJson } from '../utils/paths.js';
 import { logger } from '../utils/logger.js';
+import { isAgentDetected } from '../agents/registry.js';
 
 export async function statusCommand(): Promise<void> {
   const expected = getExpectedBundleVersion() ?? 'unknown';
   const current = readVersionsJson()?.['AI.INFRASTRUCTURE.INSTALLATOR'] ?? 'not installed';
-  const installed = fs.existsSync(getProxyPath());
+  const proxyPath = getProxyPath();
+  const installed = fs.existsSync(proxyPath);
 
-  logger.info(`Bundle directory: ${getBundleDir()}`);
-  logger.info(`Proxy: ${installed ? 'installed' : 'not installed'}`);
-  logger.info(`Installed version: ${current}`);
-  logger.info(`Expected version: ${expected}`);
+  logger.info('PT AI MCP status');
+  logger.info('');
+  logger.info('Analyzer bundle');
+  logger.info(`  Status:     ${installed ? 'installed' : 'not installed'}`);
+  logger.info(`  Version:    ${current}`);
+  logger.info(`  Expected:   ${expected}`);
+  logger.info(`  Location:   ${getBundleDir()}`);
+  logger.info(`  Executable: ${proxyPath}`);
+  logger.info(`  Health:     ${getBundleHealth(installed, current, expected)}`);
 
   const statuses = await getConfigurationStatus();
   if (statuses.length === 0) {
+    logger.info('');
     logger.info(`Agents: unsupported on ${process.platform}`);
     return;
   }
 
-  logger.info('Agents:');
-  for (const { agent, mcp, hooks } of statuses) {
-    logger.info(
-      `  ${agent.displayName}: MCP ${mcp ? 'configured' : 'not configured'}, hooks ${hooks ? 'configured' : 'not configured'}`,
-    );
+  const detected = statuses.filter(({ agent }) => isAgentDetected(agent));
+  const notDetected = statuses.filter(({ agent }) => !isAgentDetected(agent));
+
+  logger.info('');
+  logger.info('Detected agents');
+  if (detected.length === 0) {
+    logger.info('  None detected');
+  } else {
+    for (const status of detected) printAgentStatus(status);
   }
+
+  logger.info('');
+  logger.info('Supported but not detected');
+  if (notDetected.length === 0) {
+    logger.info('  None');
+  } else {
+    logger.info(`  ${notDetected.map(({ agent }) => agent.displayName).join(', ')}`);
+  }
+}
+
+type AgentStatus = Awaited<ReturnType<typeof getConfigurationStatus>>[number];
+
+function printAgentStatus({ agent, mcp, hooks }: AgentStatus): void {
+  logger.info(`  ${agent.displayName}`);
+  logger.info(`    MCP:   ${formatConfigured(mcp)}  ${agent.getMcpConfigPaths().join(', ')}`);
+  logger.info(
+    agent.supportsHooks
+      ? `    Hooks: ${formatConfigured(Boolean(hooks))}  ${agent.getHooksConfigPaths().join(', ')}`
+      : '    Hooks: not supported by this agent',
+  );
+}
+
+function formatConfigured(configured: boolean): string {
+  return configured ? '✓ configured' : '○ not configured';
+}
+
+function getBundleHealth(installed: boolean, current: string, expected: string): string {
+  if (!installed) return 'install required';
+  if (expected === 'unknown' || current === 'not installed') return 'version unknown';
+  return current === expected ? 'up to date' : 'update available';
 }
