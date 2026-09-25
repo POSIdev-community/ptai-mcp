@@ -1,0 +1,84 @@
+{
+  "name": "@posidev-community/ptai-mcp",
+  "version": "1.0.0",
+  "description": "Standalone npm-package for PT Application Inspector MCP",
+  "type": "module",
+  "main": "dist/cli.js",
+  "bin": {
+    "ptai-mcp": "./bin/ptai-mcp.js"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "README.md",
+    "server.json"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:watch": "vitest",
+    "lint": "eslint src test scripts",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "metadata:sync": "node scripts/sync-server-metadata.mjs",
+    "metadata:check": "node scripts/sync-server-metadata.mjs --check",
+    "smoke:artifact": "node scripts/smoke-artifact.mjs",
+    "verify": "npm run metadata:check && npm run lint && npm run format:check && npm run typecheck && npm run test:coverage && npm run build",
+    "artifact": "npm pack",
+    "prepack": "npm run metadata:sync && npm run verify",
+    "format": "prettier --write .",
+    "prepare": "husky"
+  },
+  "config": {
+    "bundleVersion": "2.10.0.1428-develop"
+  },
+  "os": [
+    "win32",
+    "linux",
+    "darwin"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/POSIdev-community/ptai-mcp.git"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "sast",
+    "security",
+    "application-inspector",
+    "ptai"
+  ],
+  "author": "POSIdev-community",
+  "license": "MIT",
+  "dependencies": {
+    "@clack/prompts": "^0.7.0",
+    "@iarna/toml": "^2.2.5",
+    "cli-progress": "^3.12.0",
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/cli-progress": "^3.11.5",
+    "@types/node": "^20.0.0",
+    "@vitest/coverage-v8": "^3.2.6",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.6",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0",
+    "prettier": "^3.9.9",
+    "tsup": "^8.0.2",
+    "typescript": "^5.4.0",
+    "typescript-eslint": "^8.70.1",
+    "vitest": "^3.2.6"
+  }
+}

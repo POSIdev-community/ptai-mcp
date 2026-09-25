@@ -1,0 +1,11 @@
+{
+  "name": "@posidev-community/ptai-mcp",
+  "displayName": "PT Application Inspector MCP",
+  "description": "Standalone launcher and agent integration for the PT Application Inspector MCP proxy.",
+  "version": "1.0.0",
+  "transport": "stdio",
+  "startCommand": {
+    "command": "npx",
+    "args": ["-y", "@posidev-community/ptai-mcp", "start"]
+  }
+}
