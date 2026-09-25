@@ -8,7 +8,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const packagePath = path.join(root, 'package.json');
 const serverPath = path.join(root, 'server.json');
 const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
-const serverJson = JSON.parse(fs.readFileSync(serverPath, 'utf8'));
+const serverSource = fs.readFileSync(serverPath, 'utf8');
+const serverJson = JSON.parse(serverSource);
 
 const mismatches = [];
 if (serverJson.name !== packageJson.name) mismatches.push(`name (${serverJson.name} != ${packageJson.name})`);
@@ -21,8 +22,11 @@ if (process.argv.includes('--check')) {
   }
   process.stdout.write('server.json metadata is in sync.\n');
 } else {
-  serverJson.name = packageJson.name;
-  serverJson.version = packageJson.version;
-  fs.writeFileSync(serverPath, `${JSON.stringify(serverJson, null, 2)}\n`, 'utf8');
+  // Replace only the canonical metadata fields so the checked-in formatting
+  // (including Prettier's compact short arrays) remains unchanged.
+  const synchronized = serverSource
+    .replace(/("name"\s*:\s*)"[^"]*"/, (_match, prefix) => `${prefix}${JSON.stringify(packageJson.name)}`)
+    .replace(/("version"\s*:\s*)"[^"]*"/, (_match, prefix) => `${prefix}${JSON.stringify(packageJson.version)}`);
+  fs.writeFileSync(serverPath, synchronized, 'utf8');
   process.stdout.write(`Synchronized server.json with package.json ${packageJson.version}.\n`);
 }

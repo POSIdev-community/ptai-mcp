@@ -63,6 +63,9 @@ describe('install, update and uninstall commands', () => {
 
   it('installs a fresh bundle and configures agents', async () => {
     // Arrange
+    // The production macOS path keeps the .pkg archive for the native
+    // installer. Exercise the cleanup branch deterministically on every CI OS.
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
     const rm = vi.spyOn(fs, 'rmSync').mockImplementation(() => undefined);
 
@@ -75,6 +78,7 @@ describe('install, update and uninstall commands', () => {
     expect(unpackBundle).toHaveBeenCalledWith('archive.zip', 'bundle-dir', undefined, expect.any(Function));
     expect(rm).toHaveBeenCalledWith('archive.zip', { force: true });
     expect(configureCommand).toHaveBeenCalled();
+    platform.mockRestore();
   });
 
   it('skips an existing installation when not confirmed', async () => {

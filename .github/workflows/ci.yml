@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   verify:
-    name: Verify (Node ${{ matrix.node-version }})
+    name: Verify (${{ matrix.os }}, Node ${{ matrix.node-version }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
