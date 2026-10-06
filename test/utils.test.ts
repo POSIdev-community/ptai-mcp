@@ -6,7 +6,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   downloadBundle,
-  createInsecureTestRequest,
+  createInsecureRequest,
   findInstallerUrl,
   getInstallerUrl,
   isTlsCertificateError,
@@ -59,7 +59,7 @@ describe('downloader metadata', () => {
 
     // Assert
     expect(url).toContain('flus-test.ptsecurity.ru');
-    expect(seen).toHaveLength(2);
+    expect(seen).toHaveLength(3);
   });
 
   it('asks before using the test endpoint when its certificate is not trusted', async () => {
@@ -70,19 +70,24 @@ describe('downloader metadata', () => {
       }
       return new Response(null, { status: 404 });
     };
-    const insecureRequest = vi.fn<RequestFunction>(async () => new Response(null, { status: 200 }));
+    const insecureRequest = vi.fn<RequestFunction>(async (url) => {
+      if (url.toString().includes('flus-test')) {
+        return new Response(null, { status: 200 });
+      }
+      return new Response(null, { status: 404 });
+    });
     const confirm = vi.fn(async () => true);
 
     // Act
     const url = await findInstallerUrl('1.0.0', undefined, strictRequest, {
-      confirmInsecureTestTls: confirm,
-      insecureTestRequest: insecureRequest,
+      confirmInsecureTls: confirm,
+      insecureRequest: insecureRequest,
     });
 
     // Assert
     expect(url).toContain('flus-test.ptsecurity.ru');
     expect(confirm).toHaveBeenCalledOnce();
-    expect(insecureRequest).toHaveBeenCalledOnce();
+    expect(insecureRequest).toHaveBeenCalledTimes(3);
   });
 
   it('cancels the test endpoint when insecure TLS is not approved', async () => {
@@ -96,7 +101,7 @@ describe('downloader metadata', () => {
 
     // Act & Assert
     await expect(
-      findInstallerUrl('1.0.0', undefined, request, { confirmInsecureTestTls: async () => false }),
+      findInstallerUrl('1.0.0', undefined, request, { confirmInsecureTls: async () => false }),
     ).rejects.toThrow('Certificate verification was not disabled');
   });
 
@@ -126,7 +131,7 @@ describe('downloader metadata', () => {
       };
       return client;
     });
-    const requestFn = createInsecureTestRequest(request as never);
+    const requestFn = createInsecureRequest(request as never);
 
     // Act
     const result = await requestFn('https://flus-test.ptsecurity.ru/bundle.zip', {
@@ -144,7 +149,7 @@ describe('downloader metadata', () => {
   });
 
   it('rejects insecure requests outside the test endpoint', async () => {
-    const requestFn = createInsecureTestRequest();
+    const requestFn = createInsecureRequest();
     await expect(requestFn('https://example.test/bundle.zip')).rejects.toThrow('restricted');
   });
 

@@ -14,7 +14,7 @@ const prompts = {
 
 vi.mock('@clack/prompts', () => prompts);
 
-const { ALLOW_INSECURE_TEST_TLS_ENV, getDownloadSecurityOptions } = await import('../src/utils/downloadSecurity.js');
+const { ALLOW_INSECURE_TLS_ENV, getDownloadSecurityOptions } = await import('../src/utils/downloadSecurity.js');
 
 describe('download security prompts', () => {
   afterEach(() => {
@@ -27,9 +27,9 @@ describe('download security prompts', () => {
   });
 
   it('allows an explicit environment opt-in for non-interactive downloads', () => {
-    vi.stubEnv(ALLOW_INSECURE_TEST_TLS_ENV, '1');
+    vi.stubEnv(ALLOW_INSECURE_TLS_ENV, '1');
 
-    expect(getDownloadSecurityOptions().allowInsecureTestTls).toBe(true);
+    expect(getDownloadSecurityOptions().allowInsecureTls).toBe(true);
   });
 
   it('explains how to opt in when a non-interactive process cannot prompt', async () => {
@@ -37,8 +37,8 @@ describe('download security prompts', () => {
     Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: false });
 
     await expect(
-      getDownloadSecurityOptions().confirmInsecureTestTls?.('https://flus-test.ptsecurity.ru/a.zip', new Error()),
-    ).rejects.toThrow(ALLOW_INSECURE_TEST_TLS_ENV);
+      getDownloadSecurityOptions().confirmInsecureTls?.('https://flus-test.ptsecurity.ru/a.zip', new Error()),
+    ).rejects.toThrow(ALLOW_INSECURE_TLS_ENV);
   });
 
   it('returns the interactive answer and handles cancellation', async () => {
@@ -47,7 +47,7 @@ describe('download security prompts', () => {
     prompts.confirm.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
     prompts.isCancel.mockReturnValueOnce(false).mockReturnValueOnce(true);
 
-    const prompt = getDownloadSecurityOptions().confirmInsecureTestTls;
+    const prompt = getDownloadSecurityOptions().confirmInsecureTls;
 
     await expect(prompt?.('https://flus-test.ptsecurity.ru/a.zip', new Error())).resolves.toBe(true);
     await expect(prompt?.('https://flus-test.ptsecurity.ru/a.zip', new Error())).resolves.toBe(false);

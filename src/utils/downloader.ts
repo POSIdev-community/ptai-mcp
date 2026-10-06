@@ -12,7 +12,9 @@ import { getBundleDir, getBundleExtension, getExpectedBundleVersion } from './pa
 const execFileAsync = promisify(execFile);
 const defaultBundleRunner = execFileAsync as unknown as BundleRunner;
 const PRODUCTION_DOMAIN = 'update.ptsecurity.com';
+const INTERMEDIATE_DOMAIN = 'update.ptsecurity.ru';
 const TEST_DOMAIN = 'flus-test.ptsecurity.ru';
+const ALLOWED_TLS_DOMAINS = new Set([PRODUCTION_DOMAIN, INTERMEDIATE_DOMAIN, TEST_DOMAIN]);
 const MAX_ATTEMPTS = 3;
 const MAX_REDIRECTS = 5;
 const TLS_CERTIFICATE_ERROR_CODES = new Set([
@@ -43,10 +45,10 @@ export interface DownloadOptions {
   signal?: AbortSignal;
   onProgress?: (progress: DownloadProgress) => void;
   request?: RequestFunction;
-  allowInsecureTestTls?: boolean;
-  confirmInsecureTestTls?: (url: string, error: unknown) => Promise<boolean>;
+  allowInsecureTls?: boolean;
+  confirmInsecureTls?: (url: string, error: unknown) => Promise<boolean>;
   /** Request implementation used after explicit insecure-TLS approval. Primarily useful for tests. */
-  insecureTestRequest?: RequestFunction;
+  insecureRequest?: RequestFunction;
 }
 
 export type RequestFunction = typeof fetch;
@@ -103,7 +105,7 @@ export async function findInstallerUrl(
   version = getInstallerVersion(),
   signal?: AbortSignal,
   requestFn: RequestFunction = fetch,
-  security: Pick<DownloadOptions, 'allowInsecureTestTls' | 'confirmInsecureTestTls' | 'insecureTestRequest'> = {},
+  security: Pick<DownloadOptions, 'allowInsecureTls' | 'confirmInsecureTls' | 'insecureRequest'> = {},
 ): Promise<string> {
   return (await selectInstallerUrl(version, signal, requestFn, security)).url;
 }
@@ -112,10 +114,15 @@ async function selectInstallerUrl(
   version: string,
   signal: AbortSignal | undefined,
   requestFn: RequestFunction,
-  security: Pick<DownloadOptions, 'allowInsecureTestTls' | 'confirmInsecureTestTls' | 'insecureTestRequest'>,
+  security: Pick<DownloadOptions, 'allowInsecureTls' | 'confirmInsecureTls' | 'insecureRequest'>,
 ): Promise<InstallerSelection> {
-  const candidates = [getInstallerUrl(version, PRODUCTION_DOMAIN), getInstallerUrl(version, TEST_DOMAIN)];
+  const candidates = [
+    getInstallerUrl(version, PRODUCTION_DOMAIN),
+    getInstallerUrl(version, INTERMEDIATE_DOMAIN),
+    getInstallerUrl(version, TEST_DOMAIN),
+  ];
   let lastError: unknown;
+  let hadCertError = false;
 
   for (const candidate of candidates) {
     try {
@@ -127,32 +134,41 @@ async function selectInstallerUrl(
     } catch (error) {
       lastError = error;
 
-      if (new URL(candidate).hostname !== TEST_DOMAIN || !isTlsCertificateError(error)) {
-        continue;
+      if (isTlsCertificateError(error)) {
+        hadCertError = true;
       }
-
-      const allowed =
-        security.allowInsecureTestTls === true ||
-        (security.confirmInsecureTestTls ? await security.confirmInsecureTestTls(candidate, error) : false);
-
-      if (!allowed) {
-        throw new Error(
-          `The test installer endpoint uses an untrusted TLS certificate. ` +
-            `Certificate verification was not disabled, so the download was cancelled.`,
-          { cause: error },
-        );
-      }
-
-      const insecureRequest = security.insecureTestRequest ?? createInsecureTestRequest();
-      const insecureResponse = await requestHead(candidate, signal, insecureRequest);
-      if (insecureResponse.statusCode >= 200 && insecureResponse.statusCode < 400) {
-        return { url: candidate, request: insecureRequest };
-      }
-      lastError = new Error(`Installer endpoint returned HTTP ${insecureResponse.statusCode}: ${candidate}`);
     }
   }
 
-  throw new Error('Neither production nor test installer URL is available.', { cause: lastError });
+  if (hadCertError) {
+    const allowed =
+      security.allowInsecureTls === true ||
+      (security.confirmInsecureTls ? await security.confirmInsecureTls(candidates[0], lastError) : false);
+
+    if (!allowed) {
+      throw new Error(
+        `The installer endpoints use untrusted TLS certificates. ` +
+          `Certificate verification was not disabled, so the download was cancelled.`,
+        { cause: lastError },
+      );
+    }
+
+    const insecureRequest = security.insecureRequest ?? createInsecureRequest();
+
+    for (const candidate of candidates) {
+      try {
+        const insecureResponse = await requestHead(candidate, signal, insecureRequest);
+        if (insecureResponse.statusCode >= 200 && insecureResponse.statusCode < 400) {
+          return { url: candidate, request: insecureRequest };
+        }
+        lastError = new Error(`Installer endpoint returned HTTP ${insecureResponse.statusCode}: ${candidate}`);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+  }
+
+  throw new Error('No installer URL is available.', { cause: lastError });
 }
 
 export async function downloadBundle(options: DownloadOptions = {}): Promise<{
@@ -197,11 +213,11 @@ export function isTlsCertificateError(error: unknown): boolean {
   return false;
 }
 
-export function createInsecureTestRequest(request: typeof https.request = https.request): RequestFunction {
+export function createInsecureRequest(request: typeof https.request = https.request): RequestFunction {
   return async (input, init = {}) => {
     const initialUrl = toUrl(input);
-    if (initialUrl.protocol !== 'https:' || initialUrl.hostname !== TEST_DOMAIN) {
-      throw new Error(`Insecure TLS is restricted to https://${TEST_DOMAIN}.`);
+    if (initialUrl.protocol !== 'https:' || !ALLOWED_TLS_DOMAINS.has(initialUrl.hostname)) {
+      throw new Error(`Insecure TLS is restricted to allowed domains.`);
     }
 
     return requestWithRedirects(initialUrl, init, request, 0);
@@ -232,8 +248,8 @@ async function requestWithRedirects(
         if (status >= 300 && status < 400 && location && init.redirect === 'follow') {
           response.resume();
           const redirectUrl = new URL(location, url);
-          if (redirectUrl.protocol !== 'https:' || redirectUrl.hostname !== TEST_DOMAIN) {
-            reject(new Error(`Refusing insecure TLS redirect outside https://${TEST_DOMAIN}.`));
+          if (redirectUrl.protocol !== 'https:' || !ALLOWED_TLS_DOMAINS.has(redirectUrl.hostname)) {
+            reject(new Error(`Refusing insecure TLS redirect outside allowed domains.`));
             return;
           }
           void requestWithRedirects(redirectUrl, init, request, redirectCount + 1).then(resolve, reject);
