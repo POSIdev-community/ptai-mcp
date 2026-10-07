@@ -13,6 +13,7 @@ import {
 import { appendRules, deleteStandaloneRules, removeRules, writeStandaloneRules } from './rules.js';
 import { HOOK_EVENTS, AGENT_FORMATS, STOP_TOOL_NAME, AGENT_IDS } from './constants.js';
 import { getProxyPath } from '../utils/paths.js';
+import { configureOpenCodeHooks, isOpenCodeHooksConfigured, removeOpenCodeHooks } from './openCode.js';
 
 export async function configureHooks(agent: AgentDefinition, proxyPath: string): Promise<boolean> {
   return (HOOK_ADAPTERS[agent.id]?.configure ?? unsupportedConfigure)(agent, proxyPath);
@@ -94,6 +95,11 @@ const HOOK_ADAPTERS: Readonly<Record<string, HookAdapter>> = {
     configure: configureGeminiCliHooks,
     isConfigured: () => hasGeminiRules(),
     remove: removeGeminiCliHooks,
+  },
+  [AGENT_IDS.OPEN_CODE]: {
+    configure: configureOpenCodeHooks,
+    isConfigured: (agent) => isOpenCodeHooksConfigured(agent),
+    remove: removeOpenCodeHooks,
   },
 };
 

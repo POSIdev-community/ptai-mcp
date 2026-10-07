@@ -30,6 +30,7 @@ describe('agent registry', () => {
       AGENT_IDS.CODEX,
       AGENT_IDS.ANTIGRAVITY,
       AGENT_IDS.GEMINI_CLI,
+      AGENT_IDS.OPEN_CODE,
     ]);
     expect(AGENTS.find((agent) => agent.id === AGENT_IDS.CODEX)?.format).toBe('toml');
     expect(getAgent(AGENT_IDS.CURSOR)).toBe(AGENTS[0]);
@@ -132,6 +133,19 @@ describe('agent registry', () => {
     // Cleanup
     platform.mockRestore();
     vi.unstubAllEnvs();
+  });
+
+  it('uses OpenCode XDG paths and honors an explicit config file', () => {
+    vi.stubEnv('XDG_CONFIG_HOME', '/custom/config');
+    const agent = getAgent(AGENT_IDS.OPEN_CODE)!;
+
+    expect(agent.getMcpConfigPaths()[0]).toBe(path.join('/custom/config', 'opencode', 'opencode.jsonc'));
+    expect(agent.getHooksConfigPaths()[0]).toBe(
+      path.join('/custom/config', 'opencode', 'plugins', 'pt_ai_security', 'index.ts'),
+    );
+
+    vi.stubEnv('OPENCODE_CONFIG', '/other/custom-opencode.jsonc');
+    expect(agent.getMcpConfigPaths()).toEqual(['/other/custom-opencode.jsonc']);
   });
 });
 

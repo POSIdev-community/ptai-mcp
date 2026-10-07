@@ -46,11 +46,13 @@ describe('download security prompts', () => {
     Object.defineProperty(process.stdout, 'isTTY', { configurable: true, value: true });
     prompts.confirm.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
     prompts.isCancel.mockReturnValueOnce(false).mockReturnValueOnce(true);
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
     const prompt = getDownloadSecurityOptions().confirmInsecureTls;
 
     await expect(prompt?.('https://flus-test.ptsecurity.ru/a.zip', new Error())).resolves.toBe(true);
     await expect(prompt?.('https://flus-test.ptsecurity.ru/a.zip', new Error())).resolves.toBe(false);
-    expect(prompts.log.warn).toHaveBeenCalledTimes(2);
+    expect(stderr).toHaveBeenCalledTimes(2);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('Warning: TLS certificate validation failed'));
   });
 });

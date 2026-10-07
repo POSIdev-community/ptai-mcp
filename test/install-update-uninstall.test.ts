@@ -18,7 +18,7 @@ const unpackBundle = vi.fn(async (...args: unknown[]) => {
   onProgress?.({ extracted: 2, total: 2 });
 });
 vi.mock('../src/utils/downloader.js', () => ({ downloadBundle, unpackBundle }));
-const killAnalyzerProcesses = vi.fn(async () => undefined);
+const killAnalyzerProcesses = vi.fn(async () => ({ stopped: [], notRunning: [] }));
 vi.mock('../src/utils/processes.js', () => ({ killAnalyzerProcesses }));
 const configureCommand = vi.fn(async () => undefined);
 vi.mock('../src/commands/configure.js', () => ({ configureCommand }));
@@ -26,6 +26,8 @@ const removeMcp = vi.fn(async () => undefined);
 const removeHooks = vi.fn(async () => undefined);
 vi.mock('../src/agents/mcpConfig.js', () => ({ removeMcp }));
 vi.mock('../src/agents/hooksConfig.js', () => ({ removeHooks }));
+const removeCustomAgentGuide = vi.fn(async () => false);
+vi.mock('../src/agents/customAgent.js', () => ({ removeCustomAgentGuide }));
 const agents = [
   {
     id: 'one',
@@ -168,14 +170,14 @@ describe('install, update and uninstall commands', () => {
     expect(killAnalyzerProcesses).not.toHaveBeenCalled();
   });
 
-  it('preserves configuration when individual removals fail', async () => {
+  it('reports individual configuration cleanup failures after removing the bundle', async () => {
     // Arrange
     confirm.mockResolvedValue(true);
     removeMcp.mockRejectedValue(new Error('MCP failed'));
     removeHooks.mockRejectedValue(new Error('hooks failed'));
 
     // Act
-    await uninstallCommand();
+    await expect(uninstallCommand()).rejects.toThrow('some agent configuration could not be cleaned');
 
     // Assert
     expect(killAnalyzerProcesses).toHaveBeenCalled();

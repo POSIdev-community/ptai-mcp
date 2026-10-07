@@ -13,6 +13,7 @@ describe('status command', () => {
 
     // Assert
     expect(output).toContain('PT AI MCP status');
+    expect(output.some((line) => line === 'Package:     @posidev-community/ptai-mcp v1.0.0')).toBe(true);
     expect(output).toContain('Analyzer bundle');
     expect(output.some((line) => line.startsWith('  Location:'))).toBe(true);
     expect(output.some((line) => line.startsWith('  Expected:'))).toBe(true);

@@ -3,6 +3,7 @@ import { getConfigurationStatus } from './configure.js';
 import { getBundleDir, getExpectedBundleVersion, getProxyPath, readVersionsJson } from '../utils/paths.js';
 import { logger } from '../utils/logger.js';
 import { isAgentDetected } from '../agents/registry.js';
+import { getPackageName, getPackageVersion } from '../utils/packageMetadata.js';
 
 export async function statusCommand(): Promise<void> {
   const expected = getExpectedBundleVersion() ?? 'unknown';
@@ -11,6 +12,7 @@ export async function statusCommand(): Promise<void> {
   const installed = fs.existsSync(proxyPath);
 
   logger.info('PT AI MCP status');
+  logger.info(`Package:     ${getPackageName()} v${getPackageVersion()}`);
   logger.info('');
   logger.info('Analyzer bundle');
   logger.info(`  Status:     ${installed ? 'installed' : 'not installed'}`);

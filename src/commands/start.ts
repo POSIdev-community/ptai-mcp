@@ -1,14 +1,27 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import { spawn } from 'node:child_process';
-import { getExpectedBundleVersion, getProxyPath, readVersionsJson } from '../utils/paths.js';
+import {
+  getBackendPath,
+  getBundleDir,
+  getExpectedBundleVersion,
+  getProxyPath,
+  getVersionsPath,
+  readVersionsJson,
+} from '../utils/paths.js';
 import { logger } from '../utils/logger.js';
 
 export function startCommand() {
   const proxyPath = getProxyPath();
 
   if (!fs.existsSync(proxyPath)) {
-    logger.error(`McpProxy not found at: ${proxyPath}`);
-    logger.error(`Please run 'npx @posidev-community/ptai-mcp install' first.`);
+    const oldBundleExists =
+      fs.existsSync(getBundleDir()) || fs.existsSync(getVersionsPath()) || fs.existsSync(getBackendPath());
+    logger.error(
+      oldBundleExists
+        ? `PT AI update available. Run 'ptai-mcp update' to update.`
+        : `PT AI bundle is not installed. Please run 'npx -y @posidev-community/ptai-mcp install'.`,
+    );
     process.exit(1);
   }
 
@@ -21,10 +34,7 @@ export function startCommand() {
       const currentVersion = versions?.['AI.INFRASTRUCTURE.INSTALLATOR'];
 
       if (currentVersion && currentVersion !== expectedVersion) {
-        logger.warn(`Bundle version mismatch.`);
-        logger.warn(`Current: ${currentVersion}`);
-        logger.warn(`Expected: ${expectedVersion}`);
-        logger.warn(`Consider running 'npx @posidev-community/ptai-mcp update'.`);
+        logger.warn(`PT AI update available. Run 'ptai-mcp update' to update.`);
       }
     }
   } catch {
@@ -44,7 +54,13 @@ export function startCommand() {
     process.exit(1);
   });
 
-  child.on('exit', (code) => {
-    process.exit(code ?? 0);
+  child.on('exit', (code, signal) => {
+    process.exit(resolveExitCode(code, signal));
   });
+}
+
+export function resolveExitCode(code: number | null, signal: NodeJS.Signals | null): number {
+  if (code !== null) return code;
+  if (signal) return 128 + (os.constants.signals[signal] ?? 0);
+  return 1;
 }

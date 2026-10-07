@@ -1,9 +1,10 @@
-import { isCancel, multiselect, select } from '@clack/prompts';
+import { confirm, isCancel, multiselect, select } from '@clack/prompts';
 import { logger as log } from '../utils/logger.js';
 import { configureHooks, isHooksConfigured, removeHooks } from '../agents/hooksConfig.js';
 import { configureMcp, isMcpConfigured, removeMcp } from '../agents/mcpConfig.js';
 import { getSupportedAgents, type AgentDefinition, isAgentDetected } from '../agents/registry.js';
 import { getProxyPath } from '../utils/paths.js';
+import { CUSTOM_AGENT_ID, openCustomAgentGuide, writeCustomAgentGuide } from '../agents/customAgent.js';
 
 export const BACK_TO_MCP_SELECTION = '__back_to_mcp_selection__';
 const CONFIGURE_HOOKS = '__configure_hooks__';
@@ -14,21 +15,24 @@ export async function configureCommand(): Promise<void> {
     throw new Error(`Unsupported OS: ${process.platform}`);
   }
   const agents = supportedAgents.filter(isAgentDetected);
-  if (agents.length === 0) {
-    log.info('No supported AI agents were detected on this computer.');
-    return;
-  }
 
   while (true) {
     const initiallyConfiguredMcp = await getInitiallyConfiguredMcp(agents);
     const mcpSelection = await multiselect({
-      message: 'Select agents for MCP configuration:',
-      options: agents.map((agent) => ({
-        value: agent.id,
-        label: agent.displayName,
-        hint: formatPaths(agent.getMcpConfigPaths(), isAgentDetected(agent)),
-      })),
-      initialValues: initiallyConfiguredMcp,
+      message: 'Select agents for saving PTAI MCP configuration (Space to toggle, Enter to continue):',
+      options: [
+        ...agents.map((agent) => ({
+          value: agent.id,
+          label: agent.displayName,
+          hint: formatPaths(agent.getMcpConfigPaths(), isAgentDetected(agent)),
+        })),
+        {
+          value: CUSTOM_AGENT_ID,
+          label: 'Custom agent setup guide',
+          hint: 'Generate manual MCP, hooks, and rules instructions',
+        },
+      ],
+      initialValues: initiallyConfiguredMcp.length > 0 ? initiallyConfiguredMcp : agents.map((agent) => agent.id),
       required: false,
     });
     if (isCancel(mcpSelection)) {
@@ -37,19 +41,16 @@ export async function configureCommand(): Promise<void> {
     }
 
     const selectedMcp = new Set(mcpSelection as string[]);
-    for (const agent of agents) {
-      const selected = selectedMcp.has(agent.id);
-      for (const configPath of agent.getMcpConfigPaths()) {
-        if (selected) {
-          const result = await configureMcp(agent, configPath);
-          if (result.paths.length > 0) log.success(`MCP configured for ${agent.displayName}: ${configPath}`);
-        } else {
-          await removeMcpIfPresent(agent, configPath);
-        }
-      }
+    const selectedDetectedAgents = agents.filter((agent) => selectedMcp.has(agent.id));
+    if (selectedDetectedAgents.length === 0) {
+      const proceed = await confirm({
+        message: 'No detected agents selected. Existing PTAI entries will be removed from their configs. Continue?',
+        initialValue: false,
+      });
+      if (isCancel(proceed) || !proceed) continue;
     }
 
-    const hookAgents = agents.filter((agent) => agent.supportsHooks && selectedMcp.has(agent.id));
+    const hookAgents = selectedDetectedAgents.filter((agent) => agent.supportsHooks);
     let hookSelection: readonly string[] = [];
     if (hookAgents.length > 0) {
       // Keep navigation separate from the agent multiselect. A navigation
@@ -66,7 +67,7 @@ export async function configureCommand(): Promise<void> {
         ],
       });
       if (isCancel(action)) {
-        log.info('MCP configuration completed; hooks configuration cancelled.');
+        log.info('Configuration cancelled; no changes were made.');
         return;
       }
       if (action === BACK_TO_MCP_SELECTION) continue;
@@ -83,10 +84,22 @@ export async function configureCommand(): Promise<void> {
         required: false,
       });
       if (isCancel(selection)) {
-        log.info('MCP configuration completed; hooks configuration cancelled.');
+        log.info('Configuration cancelled; no changes were made.');
         return;
       }
       hookSelection = selection as string[];
+    }
+
+    for (const agent of agents) {
+      const selected = selectedMcp.has(agent.id);
+      for (const configPath of agent.getMcpConfigPaths()) {
+        if (selected) {
+          const result = await configureMcp(agent, configPath);
+          if (result.paths.length > 0) log.success(`MCP configured for ${agent.displayName}: ${configPath}`);
+        } else {
+          await removeMcpIfPresent(agent, configPath);
+        }
+      }
     }
 
     const selectedHooks = new Set(hookSelection);
@@ -97,6 +110,19 @@ export async function configureCommand(): Promise<void> {
         log.success(`Hooks configured for ${agent.displayName}`);
       } else {
         await removeHooksIfPresent(agent);
+      }
+    }
+
+    if (selectedMcp.has(CUSTOM_AGENT_ID)) {
+      const guidePath = await writeCustomAgentGuide();
+      log.success(`Custom agent setup guide created: ${guidePath}`);
+      const shouldOpen = await confirm({ message: 'Open the custom agent setup guide now?', initialValue: true });
+      if (!isCancel(shouldOpen) && shouldOpen) {
+        try {
+          await openCustomAgentGuide();
+        } catch (error) {
+          log.warn(`Could not open the guide automatically: ${formatError(error)}. Open it at ${guidePath}`);
+        }
       }
     }
 

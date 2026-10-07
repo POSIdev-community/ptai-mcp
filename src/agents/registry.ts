@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { AGENT_IDS } from './constants.js';
 
-export type ConfigFormat = 'json' | 'toml';
+export type ConfigFormat = 'json' | 'toml' | 'opencode';
 
 export interface AgentDefinition {
   id: string;
@@ -17,6 +17,17 @@ export interface AgentDefinition {
 const home = () => os.homedir();
 const appData = () => process.env.APPDATA || path.join(home(), 'AppData', 'Roaming');
 const codexHome = () => process.env.CODEX_HOME || path.join(home(), '.codex');
+const openCodeHome = () =>
+  process.env.OPENCODE_CONFIG_DIR || path.join(process.env.XDG_CONFIG_HOME || path.join(home(), '.config'), 'opencode');
+const openCodeConfigPaths = () => {
+  if (process.env.OPENCODE_CONFIG) return [process.env.OPENCODE_CONFIG];
+  const base = openCodeHome();
+  const jsoncPath = path.join(base, 'opencode.jsonc');
+  const jsonPath = path.join(base, 'opencode.json');
+  if (fs.existsSync(jsoncPath)) return [jsoncPath];
+  if (fs.existsSync(jsonPath)) return [jsonPath];
+  return [jsoncPath];
+};
 
 const json = (getMcpConfigPaths: () => string[], getHooksConfigPaths: () => string[] = () => []) => ({
   format: 'json' as const,
@@ -99,6 +110,14 @@ export const AGENTS: readonly AgentDefinition[] = [
       () => [path.join(home(), '.gemini', 'settings.json')],
       // Rules-only hooks via ~/.gemini/GEMINI.md (no separate hooks config file)
     ),
+  },
+  {
+    id: AGENT_IDS.OPEN_CODE,
+    displayName: 'OpenCode',
+    format: 'opencode',
+    getMcpConfigPaths: openCodeConfigPaths,
+    getHooksConfigPaths: () => [path.join(openCodeHome(), 'plugins', 'pt_ai_security', 'index.ts')],
+    supportsHooks: true,
   },
 ];
 

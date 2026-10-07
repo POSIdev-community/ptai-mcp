@@ -6,6 +6,9 @@ const spawn = vi.fn();
 let expectedVersion: string | null | Error = '2.0.0';
 vi.mock('node:child_process', () => ({ spawn }));
 vi.mock('../src/utils/paths.js', () => ({
+  getBundleDir: () => 'C:/bundle',
+  getBackendPath: () => 'C:/bundle/AI.PluginsBackend.exe',
+  getVersionsPath: () => 'C:/bundle/versions.json',
   getProxyPath: () => 'C:/bundle/McpProxy.exe',
   getExpectedBundleVersion: () => {
     if (expectedVersion instanceof Error) throw expectedVersion;
@@ -14,7 +17,7 @@ vi.mock('../src/utils/paths.js', () => ({
   readVersionsJson: () => ({ 'AI.INFRASTRUCTURE.INSTALLATOR': '1.0.0' }),
 }));
 
-const { startCommand } = await import('../src/commands/start.js');
+const { resolveExitCode, startCommand } = await import('../src/commands/start.js');
 
 describe('start command', () => {
   beforeEach(() => {
@@ -32,6 +35,17 @@ describe('start command', () => {
     // Act & Assert
     expect(() => startCommand()).toThrow('exit:1');
     expect(exit).toHaveBeenCalledWith(1);
+  });
+
+  it('asks for an update when bundle artifacts exist but McpProxy is missing', () => {
+    vi.spyOn(fs, 'existsSync').mockImplementation((file) => String(file) === 'C:/bundle');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`exit:${code}`);
+    }) as never);
+
+    expect(() => startCommand()).toThrow('exit:1');
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining("Run 'ptai-mcp update'"));
   });
 
   it('starts the proxy, forwards arguments and propagates exit code', () => {
@@ -53,6 +67,11 @@ describe('start command', () => {
 
     // Cleanup
     process.argv = originalArgv;
+  });
+
+  it('maps a terminating signal to the conventional shell exit code', () => {
+    expect(resolveExitCode(null, 'SIGKILL')).toBe(137);
+    expect(resolveExitCode(null, null)).toBe(1);
   });
 
   it('handles a child process error', () => {

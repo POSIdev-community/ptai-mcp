@@ -5,7 +5,7 @@ import { downloadBundle, unpackBundle } from '../utils/downloader.js';
 import { getDownloadSecurityOptions } from '../utils/downloadSecurity.js';
 import { formatTransfer } from '../utils/progress.js';
 import { killAnalyzerProcesses } from '../utils/processes.js';
-import { getBundleDir } from '../utils/paths.js';
+import { getBundleDir, getProxyPath, readVersionsJson } from '../utils/paths.js';
 
 export interface BundleOperationOptions {
   version: string;
@@ -22,7 +22,8 @@ export async function runBundleOperation({ version, successMessage }: BundleOper
 
   try {
     log.step('Stopping analyzer processes...');
-    await killAnalyzerProcesses();
+    const initialStop = await killAnalyzerProcesses();
+    log.info(formatStopResult(initialStop));
 
     log.step('Downloading analyzer bundle...');
     const downloadResult = await downloadBundle({
@@ -45,6 +46,12 @@ export async function runBundleOperation({ version, successMessage }: BundleOper
     progressBar?.stop();
     progressBar = undefined;
 
+    // A host agent may restart the proxy while a multi-gigabyte bundle is downloading.
+    // Re-check immediately before replacing files to avoid locked DLLs on Windows.
+    log.step('Stopping analyzer processes before installation...');
+    const finalStop = await killAnalyzerProcesses();
+    log.info(formatStopResult(finalStop));
+
     log.step('Unpacking analyzer bundle...');
     await unpackBundle(downloadResult.archivePath, getBundleDir(), undefined, ({ extracted, total }) => {
       if (!extractionBar) {
@@ -59,11 +66,28 @@ export async function runBundleOperation({ version, successMessage }: BundleOper
     });
     extractionBar?.stop();
 
+    if (process.platform === 'darwin') verifyMacInstallation(version);
+
     if (process.platform !== 'darwin') fs.rmSync(downloadResult.archivePath, { force: true });
     log.success(successMessage);
   } finally {
     progressBar?.stop();
     extractionBar?.stop();
     process.removeListener('SIGINT', onSigint);
+  }
+}
+
+function formatStopResult(result: Awaited<ReturnType<typeof killAnalyzerProcesses>>): string {
+  return result.stopped.length > 0
+    ? `Stopped analyzer processes: ${result.stopped.join(', ')}.`
+    : 'No running analyzer processes found.';
+}
+
+function verifyMacInstallation(expectedVersion: string): void {
+  const currentVersion = readVersionsJson()?.['AI.INFRASTRUCTURE.INSTALLATOR'];
+  if (!fs.existsSync(getProxyPath()) || currentVersion !== expectedVersion) {
+    throw new Error(
+      `The macOS installer closed before bundle ${expectedVersion} was installed. Complete the installation and retry.`,
+    );
   }
 }

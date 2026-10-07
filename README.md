@@ -27,17 +27,17 @@ and unpacks it into the platform bundle directory. The production endpoint is
 checked first; development builds may be available only from the PT test
 endpoint. Agent configuration can then be managed with `configure`.
 
-If the test endpoint presents an untrusted TLS certificate, the CLI asks for
+If one of the trusted PT installer endpoints presents an untrusted TLS certificate, the CLI asks for
 explicit confirmation before disabling certificate verification for that
 download only. In a trusted, non-interactive development environment the same
-choice can be supplied explicitly with `PTAI_MCP_ALLOW_INSECURE_TEST_TLS=1`:
+choice can be supplied explicitly with `PTAI_MCP_ALLOW_INSECURE_TLS=1`:
 
 ```bash
-PTAI_MCP_ALLOW_INSECURE_TEST_TLS=1 npx @posidev-community/ptai-mcp install
+PTAI_MCP_ALLOW_INSECURE_TLS=1 npx @posidev-community/ptai-mcp install
 ```
 
 ```powershell
-$env:PTAI_MCP_ALLOW_INSECURE_TEST_TLS = '1'
+$env:PTAI_MCP_ALLOW_INSECURE_TLS = '1'
 npx @posidev-community/ptai-mcp install
 ```
 
@@ -53,11 +53,19 @@ npx @posidev-community/ptai-mcp uninstall
 ```
 
 `configure` offers separate MCP and hooks selections for Cursor, Claude
-Desktop, Claude Code, Windsurf, Kimi Code, Codex, Antigravity, and Gemini CLI.
-Existing JSON/TOML settings and unrelated hooks are preserved. Agent
+Desktop, Claude Code, Windsurf, Kimi Code, Codex, Antigravity, Gemini CLI, and OpenCode.
+Existing JSON/JSONC/TOML settings, and unrelated hooks are preserved. Agent
 configuration is supported on Windows, macOS, and Linux. Only agents with a
 detected configuration directory are shown. MCP servers are selected first;
-the hooks step then lists only the selected agents that support hooks.
+the hooks step then lists only the selected agents that support hooks. Space
+toggles a selection and Enter confirms it. Deselecting an agent removes only
+the PTAI-owned entries from that agent's configuration, with an extra
+confirmation when no detected agent is selected.
+
+The same menu can generate a custom-agent setup guide at
+`~/.ptai-mcp/PT_AI_Custom_Agent_Setup.md` and offer to open it. The guide
+contains MCP, hooks, and agent-rules examples for clients without a built-in
+adapter.
 
 Additional arguments after `start` are passed directly to `McpProxy`:
 

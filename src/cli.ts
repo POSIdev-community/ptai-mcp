@@ -1,7 +1,4 @@
 import { Command } from 'commander';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { startCommand } from './commands/start.js';
 import { installCommand } from './commands/install.js';
 import { configureCommand } from './commands/configure.js';
@@ -9,19 +6,7 @@ import { updateCommand } from './commands/update.js';
 import { statusCommand } from './commands/status.js';
 import { uninstallCommand } from './commands/uninstall.js';
 import { logger } from './utils/logger.js';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-function getVersion(): string {
-  try {
-    const pkgPath = path.resolve(__dirname, '../package.json');
-    const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-    return pkg.version;
-  } catch {
-    return '1.0.0';
-  }
-}
+import { getPackageVersion } from './utils/packageMetadata.js';
 
 type CommandSpec = {
   name: string;
@@ -44,7 +29,8 @@ export function createProgram(): Command {
   program
     .name('ptai-mcp')
     .description('Standalone CLI launcher for PT Application Inspector MCP proxy')
-    .version(getVersion());
+    .version(getPackageVersion())
+    .showHelpAfterError();
 
   for (const spec of COMMAND_SPECS) {
     const command = program.command(spec.name).description(spec.description);
