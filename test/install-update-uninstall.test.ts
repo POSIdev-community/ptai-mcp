@@ -140,11 +140,18 @@ describe('install, update and uninstall commands', () => {
 
   it('updates an installation', async () => {
     // Arrange (Update)
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    const rm = vi.spyOn(fs, 'rmSync').mockImplementation(() => undefined);
+
     // Act (Update)
     await updateCommand();
 
     // Assert (Update)
     expect(unpackBundle).toHaveBeenCalledWith('archive.zip', 'bundle-dir', undefined, expect.any(Function));
+    expect(rm).toHaveBeenCalledWith('archive.zip', { force: true });
+
+    platform.mockRestore();
   });
 
   it('removes an installation after confirmation', async () => {
