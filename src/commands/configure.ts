@@ -42,13 +42,6 @@ export async function configureCommand(): Promise<void> {
 
     const selectedMcp = new Set(mcpSelection as string[]);
     const selectedDetectedAgents = agents.filter((agent) => selectedMcp.has(agent.id));
-    if (selectedDetectedAgents.length === 0) {
-      const proceed = await confirm({
-        message: 'No detected agents selected. Existing PTAI entries will be removed from their configs. Continue?',
-        initialValue: false,
-      });
-      if (isCancel(proceed) || !proceed) continue;
-    }
 
     const hookAgents = selectedDetectedAgents.filter((agent) => agent.supportsHooks);
     let hookSelection: readonly string[] = [];

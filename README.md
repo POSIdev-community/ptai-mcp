@@ -59,8 +59,8 @@ configuration is supported on Windows, macOS, and Linux. Only agents with a
 detected configuration directory are shown. MCP servers are selected first;
 the hooks step then lists only the selected agents that support hooks. Space
 toggles a selection and Enter confirms it. Deselecting an agent removes only
-the PTAI-owned entries from that agent's configuration, with an extra
-confirmation when no detected agent is selected.
+the PTAI-owned entries from that agent's configuration. An empty selection is
+applied immediately without an additional confirmation prompt.
 
 The same menu can generate a custom-agent setup guide at
 `~/.ptai-mcp/PT_AI_Custom_Agent_Setup.md` and offer to open it. The guide

@@ -177,21 +177,32 @@ describe('configure command', () => {
     expect(removeMcp).not.toHaveBeenCalled();
   });
 
-  it('confirms an empty detected-agent selection and explains destructive cleanup', async () => {
-    multiselect.mockResolvedValueOnce([]).mockResolvedValueOnce(Symbol.for('cancel'));
-    confirm.mockResolvedValueOnce(false);
+  it('completes immediately when no agents or custom guide are selected', async () => {
+    detectedAgentIds = new Set();
+    multiselect.mockResolvedValueOnce([]);
 
     await configureCommand();
 
-    expect(confirm).toHaveBeenCalledWith(
-      expect.objectContaining({ message: expect.stringContaining('Existing PTAI entries will be removed') }),
-    );
+    expect(multiselect).toHaveBeenCalledOnce();
+    expect(confirm).not.toHaveBeenCalled();
     expect(configureMcp).not.toHaveBeenCalled();
+    expect(log.success).toHaveBeenCalledWith('Agent configuration completed.');
+  });
+
+  it('applies an empty agent selection without a confirmation loop', async () => {
+    multiselect.mockResolvedValueOnce([]);
+
+    await configureCommand();
+
+    expect(multiselect).toHaveBeenCalledOnce();
+    expect(confirm).not.toHaveBeenCalled();
+    expect(removeMcp).toHaveBeenCalledWith(agents[0], 'alpha.json');
+    expect(removeHooks).toHaveBeenCalledWith(agents[0]);
   });
 
   it('generates and offers to open the custom agent guide', async () => {
     multiselect.mockResolvedValueOnce(['__custom_agent__']);
-    confirm.mockResolvedValueOnce(true).mockResolvedValueOnce(true);
+    confirm.mockResolvedValueOnce(true);
 
     await configureCommand();
 

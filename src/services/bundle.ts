@@ -68,7 +68,7 @@ export async function runBundleOperation({ version, successMessage }: BundleOper
 
     if (process.platform === 'darwin') verifyMacInstallation(version);
 
-    if (process.platform !== 'darwin') fs.rmSync(downloadResult.archivePath, { force: true });
+    fs.rmSync(downloadResult.archivePath, { force: true });
     log.success(successMessage);
   } finally {
     progressBar?.stop();
