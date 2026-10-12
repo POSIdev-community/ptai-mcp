@@ -32,7 +32,7 @@
     "prepare": "husky"
   },
   "config": {
-    "bundleVersion": "3.0.0.1472-release-3-0-0"
+    "bundleVersion": "3.0.0.1479-release-3-0-0"
   },
   "os": [
     "win32",

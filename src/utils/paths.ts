@@ -1,7 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readPackageMetadata } from './packageMetadata.js';
 
 export interface PackageConfig {
   config?: {
@@ -64,23 +64,7 @@ export function readVersionsJson(): Record<string, string> | null {
 }
 
 export function readPackageConfig(): PackageConfig | null {
-  const currentDir = path.dirname(fileURLToPath(import.meta.url));
-  const packageCandidates = [
-    path.resolve(currentDir, '../package.json'),
-    path.resolve(currentDir, '../../package.json'),
-  ];
-
-  for (const packagePath of packageCandidates) {
-    if (!fs.existsSync(packagePath)) continue;
-
-    try {
-      return JSON.parse(fs.readFileSync(packagePath, 'utf-8')) as PackageConfig;
-    } catch {
-      return null;
-    }
-  }
-
-  return null;
+  return readPackageMetadata();
 }
 
 export function getExpectedBundleVersion(): string | null {

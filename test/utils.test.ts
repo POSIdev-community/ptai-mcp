@@ -312,6 +312,18 @@ describe('downloader metadata', () => {
     ).rejects.toThrow('aborted');
   });
 
+  it('replaces raw DNS failures with an actionable interrupted-download message', async () => {
+    const request: RequestFunction = async () => {
+      const error = new Error('getaddrinfo ENOTFOUND flus-test.ptsecurity.ru') as NodeJS.ErrnoException;
+      error.code = 'ENOTFOUND';
+      throw error;
+    };
+
+    await expect(downloadBundle({ version: '1.0.0', url: 'https://test.invalid/bundle.zip', request })).rejects.toThrow(
+      'connection was interrupted',
+    );
+  }, 10000);
+
   it('skips a download when the existing archive has the expected size', async () => {
     // Arrange
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-existing-'));
@@ -522,7 +534,7 @@ describe('bundle unpacking', () => {
     await unpackBundle('/tmp/a.zip', '/tmp/bundle', run);
 
     // Assert
-    expect(run).toHaveBeenCalledWith('open', ['/tmp/a.zip']);
+    expect(run).toHaveBeenCalledWith('open', ['-W', '/tmp/a.zip']);
 
     // Cleanup
     platform.mockRestore();

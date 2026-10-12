@@ -168,7 +168,9 @@ async function selectInstallerUrl(
     }
   }
 
-  throw new Error('No installer URL is available.', { cause: lastError });
+  throw new Error('No installer endpoint is currently reachable. Check your network connection and retry.', {
+    cause: lastError,
+  });
 }
 
 export async function downloadBundle(options: DownloadOptions = {}): Promise<{
@@ -196,7 +198,37 @@ export async function downloadBundle(options: DownloadOptions = {}): Promise<{
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+  if (options.signal?.aborted) throw lastError;
+  if (isNetworkConnectivityError(lastError)) {
+    throw new Error(
+      'The connection was interrupted while downloading the analyzer bundle. Check your network and retry.',
+      {
+        cause: lastError,
+      },
+    );
+  }
+  throw lastError;
+}
+
+function isNetworkConnectivityError(error: unknown): boolean {
+  const networkCodes = new Set([
+    'EAI_AGAIN',
+    'ECONNABORTED',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'ENETDOWN',
+    'ENETUNREACH',
+    'ENOTFOUND',
+    'ETIMEDOUT',
+  ]);
+  let current: unknown = error;
+  const seen = new Set<unknown>();
+  while (current && typeof current === 'object' && !seen.has(current)) {
+    seen.add(current);
+    if ('code' in current && networkCodes.has(String(current.code))) return true;
+    current = 'cause' in current ? current.cause : undefined;
+  }
+  return false;
 }
 
 export function isTlsCertificateError(error: unknown): boolean {
@@ -347,11 +379,11 @@ export async function unpackBundle(
   spawnProcess: BundleProcessSpawner = spawn,
 ): Promise<void> {
   if (process.platform === 'darwin') {
-    await run('open', [archivePath]);
+    await run('open', ['-W', archivePath]);
     return;
   }
 
-  await fsp.rm(bundleDir, { recursive: true, force: true });
+  await removeDirectoryWithRetry(bundleDir);
   await fsp.mkdir(bundleDir, { recursive: true });
 
   if (process.platform === 'win32') {
@@ -506,4 +538,20 @@ async function getFileSize(filePath: string): Promise<number> {
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function removeDirectoryWithRetry(directoryPath: string): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    try {
+      await fsp.rm(directoryPath, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      lastError = error;
+      const code = (error as NodeJS.ErrnoException).code;
+      if (!['EBUSY', 'EACCES', 'EPERM'].includes(code ?? '') || attempt === MAX_ATTEMPTS) break;
+      await delay(500);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }

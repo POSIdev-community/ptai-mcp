@@ -19,6 +19,7 @@ export const AGENT_FORMATS = {
   WINDSURF: 'windsurf',
   KIMI: 'kimi',
   CODEX: 'codex',
+  OPEN_CODE: 'opencode',
 } as const;
 
 export const AGENT_IDS = {
@@ -30,6 +31,8 @@ export const AGENT_IDS = {
   CODEX: 'codex',
   ANTIGRAVITY: 'antigravity',
   GEMINI_CLI: 'gemini-cli',
+  OPEN_CODE: 'opencode',
 } as const;
 
 export const STOP_TOOL_NAME = 'trigger_scan';
+export const MCP_SERVER_NAME = 'ptai_analyzer';

@@ -64,4 +64,18 @@ describe('CLI', () => {
     expect(write).toHaveBeenCalled();
     write.mockRestore();
   });
+
+  it.each([
+    ['unknown command', ['node', 'ptai-mcp', 'unknown-command']],
+    ['unknown option', ['node', 'ptai-mcp', 'status', '--unknown-option']],
+  ])('shows help after an %s error', async (_name, argv) => {
+    const output: string[] = [];
+    const program = createProgram()
+      .exitOverride()
+      .configureOutput({ writeErr: (value) => output.push(value), writeOut: (value) => output.push(value) });
+
+    await expect(program.parseAsync(argv, { from: 'node' })).rejects.toThrow();
+
+    expect(output.join('')).toContain('Usage:');
+  });
 });

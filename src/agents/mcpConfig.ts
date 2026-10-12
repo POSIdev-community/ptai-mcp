@@ -3,8 +3,10 @@ import path from 'node:path';
 import TOML from '@iarna/toml';
 import type { AgentDefinition } from './registry.js';
 import { isPtaiMcpLaunch, packageLaunch } from './launch.js';
+import { MCP_SERVER_NAME } from './constants.js';
+import { configureOpenCodeMcp, isOpenCodeMcpConfigured, removeOpenCodeMcp } from './openCode.js';
 
-export const MCP_SERVER_NAME = 'ptai_analyzer';
+export { MCP_SERVER_NAME } from './constants.js';
 export { MCP_PACKAGE_NAME } from './launch.js';
 
 export interface McpServerConfig {
@@ -23,6 +25,7 @@ export async function configureMcp(agent: AgentDefinition, configPath: string): 
     return { changed: false, paths: [] };
   }
 
+  if (agent.format === 'opencode') return configureOpenCodeMcp(configPath);
   if (agent.format === 'toml') {
     return writeTomlMcpConfig(configPath);
   }
@@ -34,6 +37,7 @@ export async function removeMcp(agent: AgentDefinition, configPath: string): Pro
     const source = await readOptional(configPath);
     if (source === null) return false;
 
+    if (agent.format === 'opencode') return removeOpenCodeMcp(configPath);
     if (agent.format === 'toml') {
       const model = TOML.parse(source) as Record<string, unknown>;
       const servers = asRecord(model.mcp_servers);
@@ -56,6 +60,7 @@ export async function removeMcp(agent: AgentDefinition, configPath: string): Pro
 
 export async function isMcpConfigured(agent: AgentDefinition, configPath: string): Promise<boolean> {
   try {
+    if (agent.format === 'opencode') return isOpenCodeMcpConfigured(configPath);
     const source = await readOptional(configPath);
     if (source === null) return false;
 

@@ -12,17 +12,22 @@ describe('process management', () => {
     const calls: Array<[string, string[]]> = [];
     const run = vi.fn(async (file: string, args: string[]) => {
       calls.push([file, args]);
-      if (args.includes('McpProxy.exe')) throw new Error('not running');
+      if (args.includes('McpProxy.exe')) {
+        const error = new Error('not running') as NodeJS.ErrnoException;
+        error.code = '128';
+        throw error;
+      }
     });
 
     // Act
-    await killAnalyzerProcesses(run);
+    const result = await killAnalyzerProcesses(run);
 
     // Assert
     expect(calls).toEqual([
-      ['taskkill', ['/F', '/IM', 'AI.PluginsBackend.exe']],
-      ['taskkill', ['/F', '/IM', 'McpProxy.exe']],
+      ['taskkill', ['/F', '/T', '/IM', 'AI.PluginsBackend.exe']],
+      ['taskkill', ['/F', '/T', '/IM', 'McpProxy.exe']],
     ]);
+    expect(result).toEqual({ stopped: ['AI.PluginsBackend.exe'], notRunning: ['McpProxy.exe'] });
 
     platform.mockRestore();
   });
@@ -39,6 +44,17 @@ describe('process management', () => {
     expect(run).toHaveBeenNthCalledWith(1, 'pkill', ['-f', 'AI.PluginsBackend']);
     expect(run).toHaveBeenNthCalledWith(2, 'pkill', ['-f', 'McpProxy']);
 
+    platform.mockRestore();
+  });
+
+  it('does not hide unexpected process termination failures', async () => {
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
+    const error = new Error('permission denied') as NodeJS.ErrnoException;
+    error.code = 'EACCES';
+
+    await expect(killAnalyzerProcesses(vi.fn(async () => Promise.reject(error)))).rejects.toThrow(
+      'Failed to stop analyzer process',
+    );
     platform.mockRestore();
   });
 });

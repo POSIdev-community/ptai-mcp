@@ -18,7 +18,7 @@ const unpackBundle = vi.fn(async (...args: unknown[]) => {
   onProgress?.({ extracted: 2, total: 2 });
 });
 vi.mock('../src/utils/downloader.js', () => ({ downloadBundle, unpackBundle }));
-const killAnalyzerProcesses = vi.fn(async () => undefined);
+const killAnalyzerProcesses = vi.fn(async () => ({ stopped: [], notRunning: [] }));
 vi.mock('../src/utils/processes.js', () => ({ killAnalyzerProcesses }));
 const configureCommand = vi.fn(async () => undefined);
 vi.mock('../src/commands/configure.js', () => ({ configureCommand }));
@@ -26,6 +26,8 @@ const removeMcp = vi.fn(async () => undefined);
 const removeHooks = vi.fn(async () => undefined);
 vi.mock('../src/agents/mcpConfig.js', () => ({ removeMcp }));
 vi.mock('../src/agents/hooksConfig.js', () => ({ removeHooks }));
+const removeCustomAgentGuide = vi.fn(async () => false);
+vi.mock('../src/agents/customAgent.js', () => ({ removeCustomAgentGuide }));
 const agents = [
   {
     id: 'one',
@@ -36,10 +38,11 @@ const agents = [
   },
 ];
 let expectedVersion: string | null = '2.0.0';
+let installedVersion = '1.0.0';
 vi.mock('../src/agents/registry.js', () => ({ getSupportedAgents: () => agents }));
 vi.mock('../src/utils/paths.js', () => ({
   getExpectedBundleVersion: () => expectedVersion,
-  readVersionsJson: () => ({ 'AI.INFRASTRUCTURE.INSTALLATOR': '1.0.0' }),
+  readVersionsJson: () => ({ 'AI.INFRASTRUCTURE.INSTALLATOR': installedVersion }),
   getProxyPath: () => 'proxy.exe',
   getVersionsPath: () => 'versions.json',
   getBundleDir: () => 'bundle-dir',
@@ -59,12 +62,12 @@ describe('install, update and uninstall commands', () => {
     configureCommand.mockClear();
     removeMcp.mockClear();
     removeHooks.mockClear();
+    expectedVersion = '2.0.0';
+    installedVersion = '1.0.0';
   });
 
   it('installs a fresh bundle and configures agents', async () => {
     // Arrange
-    // The production macOS path keeps the .pkg archive for the native
-    // installer. Exercise the cleanup branch deterministically on every CI OS.
     const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
     const rm = vi.spyOn(fs, 'rmSync').mockImplementation(() => undefined);
@@ -138,11 +141,44 @@ describe('install, update and uninstall commands', () => {
 
   it('updates an installation', async () => {
     // Arrange (Update)
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    const rm = vi.spyOn(fs, 'rmSync').mockImplementation(() => undefined);
+
     // Act (Update)
     await updateCommand();
 
     // Assert (Update)
     expect(unpackBundle).toHaveBeenCalledWith('archive.zip', 'bundle-dir', undefined, expect.any(Function));
+    expect(rm).toHaveBeenCalledWith('archive.zip', { force: true });
+
+    platform.mockRestore();
+  });
+
+  it('removes the macOS pkg only after the installed bundle is verified', async () => {
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    const rm = vi.spyOn(fs, 'rmSync').mockImplementation(() => undefined);
+    unpackBundle.mockImplementationOnce(async () => {
+      installedVersion = '2.0.0';
+    });
+
+    await updateCommand();
+
+    expect(rm).toHaveBeenCalledWith('archive.zip', { force: true });
+    expect(log.success).toHaveBeenCalledWith('Bundle 2.0.0 updated.');
+    platform.mockRestore();
+  });
+
+  it('keeps the macOS pkg when installation verification fails', async () => {
+    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+    vi.spyOn(fs, 'existsSync').mockReturnValue(true);
+    const rm = vi.spyOn(fs, 'rmSync').mockImplementation(() => undefined);
+
+    await expect(updateCommand()).rejects.toThrow('installer closed before bundle 2.0.0 was installed');
+
+    expect(rm).not.toHaveBeenCalled();
+    platform.mockRestore();
   });
 
   it('removes an installation after confirmation', async () => {
@@ -168,14 +204,14 @@ describe('install, update and uninstall commands', () => {
     expect(killAnalyzerProcesses).not.toHaveBeenCalled();
   });
 
-  it('preserves configuration when individual removals fail', async () => {
+  it('reports individual configuration cleanup failures after removing the bundle', async () => {
     // Arrange
     confirm.mockResolvedValue(true);
     removeMcp.mockRejectedValue(new Error('MCP failed'));
     removeHooks.mockRejectedValue(new Error('hooks failed'));
 
     // Act
-    await uninstallCommand();
+    await expect(uninstallCommand()).rejects.toThrow('some agent configuration could not be cleaned');
 
     // Assert
     expect(killAnalyzerProcesses).toHaveBeenCalled();
