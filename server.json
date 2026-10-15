@@ -1,11 +1,35 @@
 {
-  "name": "@posidev-community/ptai-mcp",
-  "displayName": "PT Application Inspector MCP",
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.posidev-community/ptai-mcp",
+  "title": "PT Application Inspector MCP",
   "description": "Standalone launcher and agent integration for the PT Application Inspector MCP proxy.",
+  "repository": {
+    "url": "https://github.com/POSIdev-community/ptai-mcp",
+    "source": "github"
+  },
   "version": "1.0.0",
-  "transport": "stdio",
-  "startCommand": {
-    "command": "npx",
-    "args": ["-y", "@posidev-community/ptai-mcp", "start"]
-  }
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@posidev-community/ptai-mcp",
+      "version": "1.0.0",
+      "runtimeHint": "npx",
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--yes"
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "start"
+        }
+      ]
+    }
+  ]
 }

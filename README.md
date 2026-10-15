@@ -2,6 +2,20 @@
 
 Standalone CLI launcher for the PT Application Inspector MCP.
 
+## Publication identities
+
+The public npm package and the MCP Registry entry intentionally use different
+identifiers:
+
+| Surface                       | Identifier                             |
+| ----------------------------- | -------------------------------------- |
+| npm package                   | `@posidev-community/ptai-mcp`          |
+| Official MCP Registry         | `io.github.posidev-community/ptai-mcp` |
+| Local agent configuration key | `ptai_analyzer`                        |
+
+`server.json` is the MCP Registry manifest. It describes how clients discover
+and launch the npm package; it is not read by the launcher at runtime.
+
 ## Requirements
 
 - Node.js 18 or newer
@@ -193,4 +207,6 @@ npm run smoke:artifact
 ```
 
 The package version is the single source of truth. `server.json` is synchronized
-from `package.json` during packing and checked by `npm run verify`.
+from `package.json` during packing and checked by `npm run verify`. The manifest
+also checks that its MCP Registry name matches `package.json.mcpName` and that
+its npm package entry matches the package name and version.
