@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { statusCommand } from '../src/commands/status.js';
 import { logger } from '../src/utils/logger.js';
+import { getPackageName, getPackageVersion } from '../src/utils/packageMetadata.js';
 
 describe('status command', () => {
   it('prints bundle and agent status', async () => {
@@ -13,7 +14,7 @@ describe('status command', () => {
 
     // Assert
     expect(output).toContain('PT AI MCP status');
-    expect(output.some((line) => line === 'Package:     @posidev-community/ptai-mcp v1.0.0')).toBe(true);
+    expect(output.some((line) => line === `Package:     ${getPackageName()} v${getPackageVersion()}`)).toBe(true);
     expect(output).toContain('Analyzer bundle');
     expect(output.some((line) => line.startsWith('  Location:'))).toBe(true);
     expect(output.some((line) => line.startsWith('  Expected:'))).toBe(true);

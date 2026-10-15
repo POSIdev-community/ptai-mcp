@@ -25,7 +25,7 @@ describe('publication metadata', () => {
   it('links the MCP registry identity to the npm package', () => {
     const npmPackage = serverJson.packages?.find((entry) => entry.registryType === 'npm');
 
-    expect(packageJson.mcpName).toBe('io.github.posidev-community/ptai-mcp');
+    expect(packageJson.mcpName).toBe('io.github.POSIdev-community/ptai-mcp');
     expect(serverJson.name).toBe(packageJson.mcpName);
     expect(serverJson.version).toBe(packageJson.version);
     expect(npmPackage).toMatchObject({

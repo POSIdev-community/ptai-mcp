@@ -1,7 +1,7 @@
 {
   "name": "@posidev-community/ptai-mcp",
-  "version": "1.0.0",
-  "mcpName": "io.github.posidev-community/ptai-mcp",
+  "version": "1.0.1",
+  "mcpName": "io.github.POSIdev-community/ptai-mcp",
   "description": "Standalone npm-package for PT Application Inspector MCP",
   "type": "module",
   "main": "dist/cli.js",

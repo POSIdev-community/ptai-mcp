@@ -10,7 +10,7 @@ identifiers:
 | Surface                       | Identifier                             |
 | ----------------------------- | -------------------------------------- |
 | npm package                   | `@posidev-community/ptai-mcp`          |
-| Official MCP Registry         | `io.github.posidev-community/ptai-mcp` |
+| Official MCP Registry         | `io.github.POSIdev-community/ptai-mcp` |
 | Local agent configuration key | `ptai_analyzer`                        |
 
 `server.json` is the MCP Registry manifest. It describes how clients discover
