@@ -1,6 +1,6 @@
 {
   "name": "@posidev-community/ptai-mcp",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "mcpName": "io.github.POSIdev-community/ptai-mcp",
   "description": "Standalone npm-package for PT Application Inspector MCP",
   "type": "module",
@@ -33,7 +33,7 @@
     "prepare": "husky"
   },
   "config": {
-    "bundleVersion": "3.0.0.1494"
+    "bundleVersion": "3.0.1.1505"
   },
   "os": [
     "win32",

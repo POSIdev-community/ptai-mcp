@@ -88,7 +88,7 @@ describe('bundle paths', () => {
 
     // Act & Assert
     expect(readVersionsJson()).toBeNull();
-    expect(getExpectedBundleVersion()).toBe('3.0.0.1494');
+    expect(getExpectedBundleVersion()).toBe('3.0.1.1505');
 
     await fs.rm(root, { recursive: true, force: true });
   });
