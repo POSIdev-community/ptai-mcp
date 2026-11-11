@@ -1,12 +1,14 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import TOML from '@iarna/toml';
-import type { AgentDefinition } from './registry.js';
+import { MCP_SERVER_NAME } from '../mcp/constants.js';
+import { NodeErrorCode } from '../shared/io-constants.js';
+import { AGENT_FORMATS, CONFIG_FORMATS } from './constants.js';
 import { isPtaiMcpLaunch, packageLaunch } from './launch.js';
-import { MCP_SERVER_NAME } from './constants.js';
+import { type AgentDefinition } from './models.js';
 import { configureOpenCodeMcp, isOpenCodeMcpConfigured, removeOpenCodeMcp } from './openCode.js';
 
-export { MCP_SERVER_NAME } from './constants.js';
+export { MCP_SERVER_NAME } from '../mcp/constants.js';
 export { MCP_PACKAGE_NAME } from './launch.js';
 
 export interface McpServerConfig {
@@ -25,33 +27,53 @@ export async function configureMcp(agent: AgentDefinition, configPath: string): 
     return { changed: false, paths: [] };
   }
 
-  if (agent.format === 'opencode') return configureOpenCodeMcp(configPath);
-  if (agent.format === 'toml') {
+  if (agent.format === AGENT_FORMATS.OPEN_CODE) {
+    return configureOpenCodeMcp(configPath);
+  }
+
+  if (agent.format === CONFIG_FORMATS.TOML) {
     return writeTomlMcpConfig(configPath);
   }
+
   return writeJsonMcpConfig(configPath);
 }
 
 export async function removeMcp(agent: AgentDefinition, configPath: string): Promise<boolean> {
   try {
     const source = await readOptional(configPath);
-    if (source === null) return false;
 
-    if (agent.format === 'opencode') return removeOpenCodeMcp(configPath);
-    if (agent.format === 'toml') {
+    if (source === null) {
+      return false;
+    }
+
+    if (agent.format === AGENT_FORMATS.OPEN_CODE) {
+      return removeOpenCodeMcp(configPath);
+    }
+
+    if (agent.format === CONFIG_FORMATS.TOML) {
       const model = TOML.parse(source) as Record<string, unknown>;
       const servers = asRecord(model.mcp_servers);
-      if (!servers || !(MCP_SERVER_NAME in servers)) return false;
+
+      if (!servers || !(MCP_SERVER_NAME in servers)) {
+        return false;
+      }
+
       delete servers[MCP_SERVER_NAME];
       await writeText(configPath, TOML.stringify(model as TOML.JsonMap));
+
       return true;
     }
 
     const model = JSON.parse(source) as Record<string, unknown>;
     const servers = asRecord(model.mcpServers);
-    if (!servers || !(MCP_SERVER_NAME in servers)) return false;
+
+    if (!servers || !(MCP_SERVER_NAME in servers)) {
+      return false;
+    }
+
     delete servers[MCP_SERVER_NAME];
     await writeText(configPath, `${JSON.stringify(model, null, 2)}\n`);
+
     return true;
   } catch (error) {
     throw new Error(`Failed to update MCP config ${configPath}: ${formatError(error)}`, { cause: error });
@@ -60,16 +82,24 @@ export async function removeMcp(agent: AgentDefinition, configPath: string): Pro
 
 export async function isMcpConfigured(agent: AgentDefinition, configPath: string): Promise<boolean> {
   try {
-    if (agent.format === 'opencode') return isOpenCodeMcpConfigured(configPath);
+    if (agent.format === AGENT_FORMATS.OPEN_CODE) {
+      return isOpenCodeMcpConfigured(configPath);
+    }
+
     const source = await readOptional(configPath);
-    if (source === null) return false;
+
+    if (source === null) {
+      return false;
+    }
 
     const model =
-      agent.format === 'toml'
+      agent.format === CONFIG_FORMATS.TOML
         ? (TOML.parse(source) as Record<string, unknown>)
         : (JSON.parse(source) as Record<string, unknown>);
-    const servers = asRecord(agent.format === 'toml' ? model.mcp_servers : model.mcpServers);
+
+    const servers = asRecord(agent.format === CONFIG_FORMATS.TOML ? model.mcp_servers : model.mcpServers);
     const server = servers ? asRecord(servers[MCP_SERVER_NAME]) : undefined;
+
     return isPtaiMcpLaunch(server);
   } catch {
     return false;
@@ -83,10 +113,12 @@ async function writeJsonMcpConfig(configPath: string): Promise<McpConfigResult> 
   const previous = asRecord(servers[MCP_SERVER_NAME]);
   const desired = { ...(previous ?? {}), ...packageLaunch() };
   const changed = JSON.stringify(previous) !== JSON.stringify(desired);
+
   if (changed) {
     servers[MCP_SERVER_NAME] = desired;
     await writeText(configPath, `${JSON.stringify(model, null, 2)}\n`);
   }
+
   return { changed, paths: [configPath] };
 }
 
@@ -97,20 +129,24 @@ async function writeTomlMcpConfig(configPath: string): Promise<McpConfigResult> 
   const previous = asRecord(servers[MCP_SERVER_NAME]);
   const desired = { ...(previous ?? {}), ...packageLaunch() };
   const changed = JSON.stringify(previous) !== JSON.stringify(desired);
+
   if (changed) {
     servers[MCP_SERVER_NAME] = desired;
     await writeText(configPath, TOML.stringify(model as TOML.JsonMap));
   }
+
   return { changed, paths: [configPath] };
 }
 
 async function canUseConfigPath(configPath: string): Promise<boolean> {
   try {
     await fs.access(configPath);
+
     return true;
   } catch {
     try {
       await fs.access(path.dirname(configPath));
+
       return true;
     } catch {
       return false;
@@ -122,7 +158,10 @@ async function readOptional(filePath: string): Promise<string | null> {
   try {
     return await fs.readFile(filePath, 'utf8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    if ((error as NodeJS.ErrnoException).code === NodeErrorCode.NotFound) {
+      return null;
+    }
+
     throw error;
   }
 }
@@ -134,9 +173,14 @@ async function writeText(filePath: string, content: string): Promise<void> {
 
 function ensureRecord(parent: Record<string, unknown>, key: string): Record<string, unknown> {
   const existing = asRecord(parent[key]);
-  if (existing) return existing;
+
+  if (existing) {
+    return existing;
+  }
+
   const created: Record<string, unknown> = {};
   parent[key] = created;
+
   return created;
 }
 

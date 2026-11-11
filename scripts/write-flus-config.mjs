@@ -3,9 +3,12 @@ import fs from 'node:fs';
 const host = process.env.PTAI_FLUS_HOST;
 const token = process.env.PTAI_FLUS_TOKEN;
 const release = process.env.PTAI_RELEASE_BUILD === 'true';
-if (release && (!host || !token))
+if (release && (!host || !token)) {
   throw new Error('Release artifact requires PTAI_FLUS_HOST and PTAI_FLUS_TOKEN from the BE4P release configuration.');
-if (host && new URL(host).protocol !== 'https:') throw new Error('FLUS host must use HTTPS.');
+}
+if (host && new URL(host).protocol !== 'https:') {
+  throw new Error('FLUS host must use HTTPS.');
+}
 const config =
   host && token
     ? {

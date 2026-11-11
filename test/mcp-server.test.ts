@@ -1,11 +1,11 @@
-import { afterEach, expect, it, vi } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { createMcpServer } from '../src/server.js';
-import { AieDispatcher } from '../src/aie/dispatcher.js';
-import { LocalRuntime } from '../src/local/runtime.js';
+import { afterEach, expect, it, vi } from 'vitest';
+import { AieDispatcher } from '../src/aie/mcp/dispatcher.js';
 import { localCatalog } from '../src/local/catalog.js';
-import { AieError } from '../src/aie/errors.js';
+import { LocalRuntime } from '../src/local/runtime.js';
+import { createMcpServer } from '../src/mcp/server.js';
+import { ToolError } from '../src/shared/errors.js';
 
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => {
@@ -17,7 +17,7 @@ it('serves the complete static MCP catalog without starting the local runtime or
   const local = new LocalRuntime();
   const call = vi
     .spyOn(local, 'call')
-    .mockRejectedValue(new AieError('LOCAL_BUNDLE_REQUIRED', 'Install the local bundle.'));
+    .mockRejectedValue(new ToolError('LOCAL_BUNDLE_REQUIRED', 'Install the local bundle.'));
   const resource = vi
     .spyOn(local, 'readResource')
     .mockResolvedValue({ contents: [{ uri: localCatalog.resources[0].uri, text: 'fixture' }] });
@@ -26,7 +26,7 @@ it('serves the complete static MCP catalog without starting the local runtime or
     .mockResolvedValue({ messages: [{ role: 'user', content: { type: 'text', text: 'fixture' } }] });
   const localClose = vi.spyOn(local, 'close').mockResolvedValue();
   const aie = new AieDispatcher(undefined, { invocation: vi.fn(), action: vi.fn(), close: async () => undefined });
-  vi.spyOn(aie.sessions, 'require').mockRejectedValue(new AieError('AIE_LOGIN_REQUIRED', 'Sign in.'));
+  vi.spyOn(aie.sessions, 'require').mockRejectedValue(new ToolError('AIE_LOGIN_REQUIRED', 'Sign in.'));
   const runtime = createMcpServer(aie, local);
   const client = new Client({ name: 'protocol-test', version: '1.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();

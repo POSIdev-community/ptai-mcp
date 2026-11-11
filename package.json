@@ -21,7 +21,9 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
-    "lint": "eslint src test scripts",
+    "lint": "eslint src test scripts assets bin eslint.config.js tsup.config.ts vitest.config.ts",
+    "lint:fix": "eslint src test scripts assets bin eslint.config.js tsup.config.ts vitest.config.ts --fix",
+    "quality:report": "node scripts/report-function-sizes.mjs",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "metadata:sync": "node scripts/sync-server-metadata.mjs",
@@ -76,8 +78,8 @@
     "yazl": "3.3.1"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "1.32.2",
     "@eslint/js": "^9.39.1",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@types/cli-progress": "^3.11.5",
     "@types/node": "^20.0.0",
     "@types/yauzl": "3.4.0",
@@ -86,6 +88,7 @@
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.6",
+    "eslint-plugin-simple-import-sort": "12.1.1",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "prettier": "^3.9.9",

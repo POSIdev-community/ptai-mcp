@@ -1,17 +1,12 @@
-import fs from 'node:fs/promises';
 import syncFs from 'node:fs';
+import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  configureMcp,
-  isMcpConfigured,
-  removeMcp,
-  MCP_PACKAGE_NAME,
-  MCP_SERVER_NAME,
-} from '../src/agents/mcpConfig.js';
-import { AGENTS, getAgent, getSupportedAgents, isAgentDetected } from '../src/agents/registry.js';
 import { AGENT_IDS } from '../src/agents/constants.js';
+import { configureMcp, isMcpConfigured, MCP_PACKAGE_NAME, removeMcp } from '../src/agents/mcpConfig.js';
+import { AGENTS, getAgent, getSupportedAgents, isAgentDetected } from '../src/agents/registry.js';
+import { MCP_SERVER_NAME } from '../src/mcp/constants.js';
 
 afterEach(() => {
   vi.restoreAllMocks();

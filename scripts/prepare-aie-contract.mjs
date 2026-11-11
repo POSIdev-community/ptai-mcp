@@ -1,11 +1,12 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import crypto from 'node:crypto';
 import YAML from 'yaml';
 
 const specification = process.argv[2];
-if (!specification)
+if (!specification) {
   throw new Error('Usage: node scripts/prepare-aie-contract.mjs /path/to/AI.Api.Client/swagger/v6.3.0/swagger.yaml');
+}
 const source = fs.readFileSync(specification, 'utf8');
 const document = YAML.parse(source);
 const output = 'src/vendor/aie-v63';
@@ -23,8 +24,9 @@ fs.writeFileSync(
 function patchImports(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const file = path.join(dir, entry.name);
-    if (entry.isDirectory()) patchImports(file);
-    else if (entry.name.endsWith('.ts')) {
+    if (entry.isDirectory()) {
+      patchImports(file);
+    } else if (entry.name.endsWith('.ts')) {
       // Generator 7's extensionless relative imports need ESM extensions under NodeNext.
       let text = fs.readFileSync(file, 'utf8');
       text = text.replace(
@@ -57,7 +59,9 @@ const apiGroups = new Set([
 ]);
 const apiDir = path.join(output, 'src', 'apis');
 for (const entry of fs.readdirSync(apiDir)) {
-  if (entry.endsWith('Api.ts') && !apiGroups.has(entry.slice(0, -6))) fs.unlinkSync(path.join(apiDir, entry));
+  if (entry.endsWith('Api.ts') && !apiGroups.has(entry.slice(0, -6))) {
+    fs.unlinkSync(path.join(apiDir, entry));
+  }
 }
 fs.writeFileSync(
   path.join(apiDir, 'index.ts'),

@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const spawn = vi.fn();
 const startMcpServer = vi.fn();
-vi.mock('../src/server.js', () => ({ startMcpServer }));
+vi.mock('../src/mcp/server.js', () => ({ startMcpServer }));
 let expectedVersion: string | null | Error = '2.0.0';
 vi.mock('node:child_process', () => ({ spawn }));
 vi.mock('../src/utils/paths.js', () => ({
@@ -13,7 +13,9 @@ vi.mock('../src/utils/paths.js', () => ({
   getVersionsPath: () => 'C:/bundle/versions.json',
   getProxyPath: () => 'C:/bundle/McpProxy.exe',
   getExpectedBundleVersion: () => {
-    if (expectedVersion instanceof Error) throw expectedVersion;
+    if (expectedVersion instanceof Error) {
+      throw expectedVersion;
+    }
     return expectedVersion;
   },
   readVersionsJson: () => ({ 'AI.INFRASTRUCTURE.INSTALLATOR': '1.0.0' }),

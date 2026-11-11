@@ -15,7 +15,10 @@ export function readPackageMetadata(): PackageMetadata | null {
   const candidates = [path.resolve(currentDir, '../package.json'), path.resolve(currentDir, '../../package.json')];
 
   for (const packagePath of candidates) {
-    if (!fs.existsSync(packagePath)) continue;
+    if (!fs.existsSync(packagePath)) {
+      continue;
+    }
+
     try {
       return JSON.parse(fs.readFileSync(packagePath, 'utf8')) as PackageMetadata;
     } catch {

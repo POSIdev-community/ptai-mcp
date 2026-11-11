@@ -2,9 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { INSTALLER_PRODUCT_ID } from '../src/services/bundle-constants.js';
 
 const proxy = process.argv[2];
-if (!proxy) throw new Error('Pass the installed McpProxy executable. Listing does not start an analyzer.');
+if (!proxy) {
+  throw new Error('Pass the installed McpProxy executable. Listing does not start an analyzer.');
+}
 const transport = new StdioClientTransport({
   command: proxy,
   args: [],
@@ -20,7 +23,7 @@ try {
   const prompts = await client.listPrompts();
   const versions = JSON.parse(fs.readFileSync(path.join(path.dirname(proxy), 'versions.json'), 'utf8'));
   const snapshot = {
-    bundle_version: versions['AI.INFRASTRUCTURE.INSTALLATOR'],
+    bundle_version: versions[INSTALLER_PRODUCT_ID],
     server: client.getServerVersion(),
     tools: tools.tools,
     resources: resources.resources,

@@ -11,15 +11,24 @@ const serverJson = JSON.parse(serverSource);
 
 const npmPackage = serverJson.packages?.find((entry) => entry.registryType === 'npm');
 const mismatches = [];
-if (!packageJson.mcpName) mismatches.push('package.json.mcpName is missing');
-if (serverJson.name !== packageJson.mcpName) mismatches.push(`name (${serverJson.name} != ${packageJson.mcpName})`);
-if (serverJson.version !== packageJson.version)
+if (!packageJson.mcpName) {
+  mismatches.push('package.json.mcpName is missing');
+}
+if (serverJson.name !== packageJson.mcpName) {
+  mismatches.push(`name (${serverJson.name} != ${packageJson.mcpName})`);
+}
+if (serverJson.version !== packageJson.version) {
   mismatches.push(`version (${serverJson.version} != ${packageJson.version})`);
-if (!npmPackage) mismatches.push('server.json npm package entry is missing');
-if (npmPackage && npmPackage.identifier !== packageJson.name)
+}
+if (!npmPackage) {
+  mismatches.push('server.json npm package entry is missing');
+}
+if (npmPackage && npmPackage.identifier !== packageJson.name) {
   mismatches.push(`npm identifier (${npmPackage.identifier} != ${packageJson.name})`);
-if (npmPackage && npmPackage.version !== packageJson.version)
+}
+if (npmPackage && npmPackage.version !== packageJson.version) {
   mismatches.push(`npm package version (${npmPackage.version} != ${packageJson.version})`);
+}
 
 if (process.argv.includes('--check')) {
   if (mismatches.length > 0) {
@@ -27,8 +36,12 @@ if (process.argv.includes('--check')) {
   }
   process.stdout.write('server.json metadata is in sync.\n');
 } else {
-  if (!packageJson.mcpName) throw new Error('package.json must define mcpName before synchronizing server.json');
-  if (!npmPackage) throw new Error('server.json must define an npm package entry before synchronizing');
+  if (!packageJson.mcpName) {
+    throw new Error('package.json must define mcpName before synchronizing server.json');
+  }
+  if (!npmPackage) {
+    throw new Error('server.json must define an npm package entry before synchronizing');
+  }
 
   serverJson.name = packageJson.mcpName;
   serverJson.version = packageJson.version;

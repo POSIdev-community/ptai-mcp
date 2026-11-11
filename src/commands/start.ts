@@ -1,6 +1,10 @@
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
-import { spawn } from 'node:child_process';
+import { startMcpServer } from '../mcp/server.js';
+import { INSTALLER_PRODUCT_ID } from '../services/bundle-constants.js';
+import { ProcessStdio } from '../shared/io-constants.js';
+import { logger } from '../utils/logger.js';
 import {
   getBackendPath,
   getBundleDir,
@@ -9,12 +13,14 @@ import {
   getVersionsPath,
   readVersionsJson,
 } from '../utils/paths.js';
-import { logger } from '../utils/logger.js';
-import { startMcpServer } from '../server.js';
 
 export async function startCommand() {
   const args = process.argv.slice(3);
-  if (args[0] === 'hook' || args[0] === 'hook-start') return startProxyCommand();
+
+  if (args[0] === 'hook' || args[0] === 'hook-start') {
+    return startProxyCommand();
+  }
+
   await startMcpServer(args);
 }
 
@@ -24,6 +30,7 @@ export function startProxyCommand() {
   if (!fs.existsSync(proxyPath)) {
     const oldBundleExists =
       fs.existsSync(getBundleDir()) || fs.existsSync(getVersionsPath()) || fs.existsSync(getBackendPath());
+
     logger.error(
       oldBundleExists
         ? `PT AI update available. Run 'ptai-mcp update' to update.`
@@ -38,7 +45,7 @@ export function startProxyCommand() {
 
     if (expectedVersion) {
       const versions = readVersionsJson();
-      const currentVersion = versions?.['AI.INFRASTRUCTURE.INSTALLATOR'];
+      const currentVersion = versions?.[INSTALLER_PRODUCT_ID];
 
       if (currentVersion && currentVersion !== expectedVersion) {
         logger.warn(`PT AI update available. Run 'ptai-mcp update' to update.`);
@@ -52,7 +59,7 @@ export function startProxyCommand() {
   const args = process.argv.slice(3);
 
   const child = spawn(proxyPath, args, {
-    stdio: 'inherit',
+    stdio: ProcessStdio.Inherit,
     windowsHide: true,
   });
 
@@ -67,7 +74,13 @@ export function startProxyCommand() {
 }
 
 export function resolveExitCode(code: number | null, signal: NodeJS.Signals | null): number {
-  if (code !== null) return code;
-  if (signal) return 128 + (os.constants.signals[signal] ?? 0);
+  if (code !== null) {
+    return code;
+  }
+
+  if (signal) {
+    return 128 + (os.constants.signals[signal] ?? 0);
+  }
+
   return 1;
 }

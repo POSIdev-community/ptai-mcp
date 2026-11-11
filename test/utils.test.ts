@@ -1,19 +1,10 @@
-import fs from 'node:fs/promises';
-import { Readable } from 'node:stream';
 import { EventEmitter } from 'node:events';
+import fsStreams from 'node:fs';
+import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  downloadBundle,
-  createInsecureRequest,
-  findInstallerUrl,
-  getInstallerUrl,
-  isTlsCertificateError,
-  unpackBundle,
-  type RequestFunction,
-} from '../src/utils/downloader.js';
-import { formatBytes, formatTransfer } from '../src/utils/progress.js';
 import {
   appendRules,
   deleteStandaloneRules,
@@ -21,6 +12,11 @@ import {
   removeRules,
   writeStandaloneRules,
 } from '../src/agents/rules.js';
+import { downloadBundle, findInstallerUrl, getInstallerUrl } from '../src/services/installer/download.js';
+import { unpackBundle } from '../src/services/installer/extraction.js';
+import { type RequestFunction } from '../src/services/installer/models.js';
+import { createInsecureRequest, isTlsCertificateError } from '../src/services/installer/transport.js';
+import { formatBytes, formatTransfer } from '../src/utils/progress.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -127,7 +123,9 @@ describe('downloader metadata', () => {
       };
       client.end = () => queueMicrotask(() => callback(response));
       client.destroy = (error) => {
-        if (error) client.emit('error', error);
+        if (error) {
+          client.emit('error', error);
+        }
       };
       return client;
     });
@@ -151,6 +149,17 @@ describe('downloader metadata', () => {
   it('rejects insecure requests outside the test endpoint', async () => {
     const requestFn = createInsecureRequest();
     await expect(requestFn('https://example.test/bundle.zip')).rejects.toThrow('restricted');
+  });
+
+  it('does not open an approved TLS request when its signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const request = vi.fn();
+    const requestFn = createInsecureRequest(request as never);
+    await expect(
+      requestFn('https://flus-test.ptsecurity.ru/bundle.zip', { signal: controller.signal }),
+    ).rejects.toThrow('Installer download aborted');
+    expect(request).not.toHaveBeenCalled();
   });
 
   it('downloads a fresh archive and reports progress', async () => {
@@ -271,7 +280,9 @@ describe('downloader metadata', () => {
         } as unknown as Response;
       }
       gets += 1;
-      if (gets < 3) throw new Error('temporary failure');
+      if (gets < 3) {
+        throw new Error('temporary failure');
+      }
       return {
         ok: true,
         status: 200,
@@ -331,7 +342,9 @@ describe('downloader metadata', () => {
     await fs.writeFile(archivePath, 'same');
     let getCalls = 0;
     const request: RequestFunction = async (_url, init) => {
-      if (init?.method === 'GET') getCalls += 1;
+      if (init?.method === 'GET') {
+        getCalls += 1;
+      }
       return {
         ok: true,
         status: 200,
@@ -446,6 +459,7 @@ describe('downloader metadata', () => {
 
   it('does not start writing when aborted before the response body is consumed', async () => {
     // Arrange
+    const createWriteStream = vi.spyOn(fsStreams, 'createWriteStream');
     const controller = new AbortController();
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-mcp-download-preabort-'));
     const archivePath = path.join(root, 'bundle.zip');
@@ -479,6 +493,7 @@ describe('downloader metadata', () => {
       }),
     ).rejects.toThrow('Installer download aborted');
 
+    expect(createWriteStream).not.toHaveBeenCalled();
     await fs.rm(root, { recursive: true, force: true });
   });
 

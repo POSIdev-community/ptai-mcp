@@ -1,10 +1,10 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it, vi } from 'vitest';
 import TOML from '@iarna/toml';
-import { configureHooks, isHooksConfigured, removeHooks } from '../src/agents/hooksConfig.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AGENT_IDS } from '../src/agents/constants.js';
+import { configureHooks, isHooksConfigured, removeHooks } from '../src/agents/hooksConfig.js';
 
 describe('hook configuration', () => {
   afterEach(() => {

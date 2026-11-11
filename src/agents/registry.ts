@@ -1,31 +1,34 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { AGENT_IDS } from './constants.js';
-
-export type ConfigFormat = 'json' | 'toml' | 'opencode';
-
-export interface AgentDefinition {
-  id: string;
-  displayName: string;
-  format: ConfigFormat;
-  getMcpConfigPaths: () => string[];
-  getHooksConfigPaths: () => string[];
-  supportsHooks: boolean;
-}
+import { Platform } from '../utils/platform-constants.js';
+import { AGENT_FORMATS, AGENT_IDS, CONFIG_FORMATS, GeminiConfigPath } from './constants.js';
+import type { AgentDefinition } from './models.js';
 
 const home = () => os.homedir();
 const appData = () => process.env.APPDATA || path.join(home(), 'AppData', 'Roaming');
 const codexHome = () => process.env.CODEX_HOME || path.join(home(), '.codex');
 const openCodeHome = () =>
-  process.env.OPENCODE_CONFIG_DIR || path.join(process.env.XDG_CONFIG_HOME || path.join(home(), '.config'), 'opencode');
+  process.env.OPENCODE_CONFIG_DIR ||
+  path.join(process.env.XDG_CONFIG_HOME || path.join(home(), '.config'), AGENT_IDS.OPEN_CODE);
+
 const openCodeConfigPaths = () => {
-  if (process.env.OPENCODE_CONFIG) return [process.env.OPENCODE_CONFIG];
+  if (process.env.OPENCODE_CONFIG) {
+    return [process.env.OPENCODE_CONFIG];
+  }
+
   const base = openCodeHome();
   const jsoncPath = path.join(base, 'opencode.jsonc');
   const jsonPath = path.join(base, 'opencode.json');
-  if (fs.existsSync(jsoncPath)) return [jsoncPath];
-  if (fs.existsSync(jsonPath)) return [jsonPath];
+
+  if (fs.existsSync(jsoncPath)) {
+    return [jsoncPath];
+  }
+
+  if (fs.existsSync(jsonPath)) {
+    return [jsonPath];
+  }
+
   return [jsoncPath];
 };
 
@@ -49,11 +52,17 @@ export const AGENTS: readonly AgentDefinition[] = [
     id: AGENT_IDS.CLAUDE_DESKTOP,
     displayName: 'Claude Desktop',
     ...json(() => {
-      if (process.platform === 'win32') return [path.join(appData(), 'Claude', 'claude_desktop_config.json')];
-      if (process.platform === 'darwin')
+      if (process.platform === Platform.Windows) {
+        return [path.join(appData(), 'Claude', 'claude_desktop_config.json')];
+      }
+
+      if (process.platform === Platform.MacOS) {
         return [path.join(home(), 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json')];
+      }
+
       // Linux: XDG
       const xdgConfig = process.env.XDG_CONFIG_HOME || path.join(home(), '.config');
+
       return [path.join(xdgConfig, 'Claude', 'claude_desktop_config.json')];
     }),
   },
@@ -84,7 +93,7 @@ export const AGENTS: readonly AgentDefinition[] = [
   {
     id: AGENT_IDS.CODEX,
     displayName: 'Codex',
-    format: 'toml',
+    format: CONFIG_FORMATS.TOML,
     getMcpConfigPaths: () => [path.join(codexHome(), 'config.toml')],
     getHooksConfigPaths: () => [path.join(codexHome(), 'hooks.json')],
     supportsHooks: true,
@@ -94,10 +103,10 @@ export const AGENTS: readonly AgentDefinition[] = [
     displayName: 'Antigravity',
     ...json(
       () => [
-        path.join(home(), '.gemini', 'config', 'mcp_config.json'),
-        path.join(home(), '.gemini', 'antigravity', 'mcp_config.json'),
+        path.join(home(), GeminiConfigPath.Directory, 'config', 'mcp_config.json'),
+        path.join(home(), GeminiConfigPath.Directory, AGENT_IDS.ANTIGRAVITY, 'mcp_config.json'),
       ],
-      () => [path.join(home(), '.gemini', 'config', 'AGENTS.md')],
+      () => [path.join(home(), GeminiConfigPath.Directory, 'config', 'AGENTS.md')],
     ),
   },
   {
@@ -107,14 +116,14 @@ export const AGENTS: readonly AgentDefinition[] = [
     // This is the same JSON format as other agents — standard mcpServers object.
     // All other settings.json keys (general, ui, model, tools, security, etc.) are preserved.
     ...json(
-      () => [path.join(home(), '.gemini', 'settings.json')],
+      () => [path.join(home(), GeminiConfigPath.Directory, 'settings.json')],
       // Rules-only hooks via ~/.gemini/GEMINI.md (no separate hooks config file)
     ),
   },
   {
     id: AGENT_IDS.OPEN_CODE,
     displayName: 'OpenCode',
-    format: 'opencode',
+    format: AGENT_FORMATS.OPEN_CODE,
     getMcpConfigPaths: openCodeConfigPaths,
     getHooksConfigPaths: () => [path.join(openCodeHome(), 'plugins', 'pt_ai_security', 'index.ts')],
     supportsHooks: true,
@@ -134,24 +143,33 @@ export function isAgentDetected(agent: AgentDefinition): boolean {
   // configuration directory exists, even before the agent has created the
   // specific MCP file we manage.
   return agent.getMcpConfigPaths().some((configPath) => {
-    if (fs.existsSync(configPath)) return true;
+    if (fs.existsSync(configPath)) {
+      return true;
+    }
 
     // A few agents keep their primary config directly in the home directory
     // (for example ~/.claude.json). The home directory itself always exists
     // and must not be treated as evidence that such an agent is installed.
     const parent = path.resolve(path.dirname(configPath));
-    if (parent === path.resolve(home())) return false;
+
+    if (parent === path.resolve(home())) {
+      return false;
+    }
+
     return fs.existsSync(parent);
   });
 }
 
 function getWindsurfBasePath(fileName: string): string {
-  const homePath = path.join(home(), '.codeium', 'windsurf');
-  if (process.platform === 'win32') {
-    const appDataPath = path.join(appData(), 'Codeium', 'windsurf');
+  const homePath = path.join(home(), '.codeium', AGENT_IDS.WINDSURF);
+
+  if (process.platform === Platform.Windows) {
+    const appDataPath = path.join(appData(), 'Codeium', AGENT_IDS.WINDSURF);
+
     if (fs.existsSync(appDataPath) && !fs.existsSync(homePath)) {
       return path.join(appDataPath, fileName);
     }
   }
+
   return path.join(homePath, fileName);
 }

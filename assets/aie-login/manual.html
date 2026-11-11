@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Вход в PT AI MCP</title>
+    <link rel="stylesheet" href="./login.css" />
+  </head>
+  <body>
+    <main class="root">
+      <div class="pt-logo">{{logo}}</div>
+      <h1 id="heading" data-success-label="Успешный вход">Вход в AIE</h1>
+      <p id="status" class="subheader" role="status">Ожидаем вход в браузере…</p>
+      <div id="manual" class="description-block">
+        <p>Если AIE показал код, введите его здесь.</p>
+        <form data-login-token="{{token}}">
+          <label for="code">Код авторизации</label
+          ><input id="code" type="password" autocomplete="off" required maxlength="8192" /><button type="submit">
+            Продолжить
+          </button>
+        </form>
+        <p class="hint">Не передавайте код агенту.</p>
+      </div>
+      <div id="done" class="description-block" hidden>
+        <p>Подключение к AIE установлено. Эту вкладку можно закрыть.</p>
+        <p class="server">Сервер: {{server}}</p>
+      </div>
+    </main>
+    <script src="./manual.js" defer></script>
+  </body>
+</html>

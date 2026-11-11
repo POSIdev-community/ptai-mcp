@@ -1,5 +1,5 @@
 import yazl from 'yazl';
-import { AieApi } from '../../src/aie/api.js';
+import { AieApi } from '../../src/aie/api/client.js';
 
 export const ids = {
   project: '11111111-1111-1111-1111-111111111111',
@@ -13,8 +13,8 @@ export const ids = {
   settings: '99999999-9999-9999-9999-999999999999',
   user: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
 };
-type Data = Record<string, unknown>;
-const data = (value: unknown) => value as Data;
+type JsonObject = Record<string, unknown>;
+const data = (value: unknown) => value as JsonObject;
 const json = (value: unknown, status = 200) =>
   new Response(status === 204 ? null : JSON.stringify(value), {
     status,
@@ -35,12 +35,44 @@ function archive() {
   return result;
 }
 
+function preserveFixtureSecrets(prior: JsonObject, nextSettings: JsonObject): void {
+  // Independent fixture for the observed API contract: absent/null
+  // secret leaves preserve, while an explicit empty string clears.
+  for (const path of [
+    ['authentication', 'http', 'password'],
+    ['authentication', 'form', 'password'],
+    ['authentication', 'cookie', 'cookie'],
+    ['proxySettings', 'password'],
+  ]) {
+    const key = path.pop()!;
+    const previous = path.reduce<unknown>(
+      (node, part) => (node && typeof node === 'object' ? data(node)[part] : undefined),
+      prior,
+    );
+    const next = path.reduce<unknown>(
+      (node, part) => (node && typeof node === 'object' ? data(node)[part] : undefined),
+      nextSettings,
+    );
+    if (
+      next &&
+      typeof next === 'object' &&
+      path[1] !== 'cookie' &&
+      (data(next)[key] == null || (path[0] === 'proxySettings' && data(next)[key] === '')) &&
+      previous &&
+      typeof previous === 'object'
+    ) {
+      data(next)[key] = data(previous)[key];
+    }
+  }
+}
+
 /** Small independent HTTP contract fixture. Production services use the actual
  * generated client against these routes; no domain methods are mocked out. */
 export class AieFixture {
-  readonly calls: Array<{ method: string; path: string; body: unknown; authorization: string | null }> = [];
-  readonly faults = new Map<string, { status: number; body?: unknown }>();
-  readonly settings: Record<string, Data> = {
+
+  public readonly calls: Array<{ method: string; path: string; body: unknown; authorization: string | null }> = [];
+  public readonly faults = new Map<string, { status: number; body?: unknown }>();
+  public readonly settings: Record<string, JsonObject> = {
     settings: {
       projectName: 'fixture',
       sourceType: 'Local',
@@ -57,7 +89,7 @@ export class AieFixture {
     },
     preferredAgentsSettings: { preferredAgents: [ids.agent], preferredAgentsOnly: false },
   };
-  readonly rules = new Map<string, Data>([
+  public readonly rules = new Map<string, JsonObject>([
     [
       'custom-rule',
       {
@@ -72,9 +104,11 @@ export class AieFixture {
       },
     ],
   ]);
-  readonly groups = new Map<string, Data>([[ids.group, { id: ids.group, name: 'group', rules: ['custom-rule'] }]]);
-  readonly types = new Map<string, Data>([[ids.type, { id: ids.type, name: 'fixture finding' }]]);
-  readonly scans = new Map<string, Data>([
+  public readonly groups = new Map<string, JsonObject>([
+    [ids.group, { id: ids.group, name: 'group', rules: ['custom-rule'] }],
+  ]);
+  public readonly types = new Map<string, JsonObject>([[ids.type, { id: ids.type, name: 'fixture finding' }]]);
+  public readonly scans = new Map<string, JsonObject>([
     [
       ids.scan,
       {
@@ -89,7 +123,7 @@ export class AieFixture {
       },
     ],
   ]);
-  readonly issue: Data = {
+  public readonly issue: JsonObject = {
     id: ids.issue,
     scanResultId: ids.scan,
     counter: 42,
@@ -102,25 +136,25 @@ export class AieFixture {
     sourceBeginLine: 7,
     vulnerableCode: { sourceFile: 'src/main.js', dataFlow: [] },
   };
-  sourceDate = '2026-11-10T12:00:00Z';
-  queueMode: 'queued' | 'assigned' | 'running' | 'missing' = 'queued';
-  queueScanId?: string;
-  ambiguousCreate = false;
-  maskBlackboxCredentials = false;
-  onWrite?: (path: string, body: Data) => void;
+  public sourceDate = '2026-11-10T12:00:00Z';
+  public queueMode: 'queued' | 'assigned' | 'running' | 'missing' = 'queued';
+  public queueScanId?: string;
+  public ambiguousCreate = false;
+  public maskBlackboxCredentials = false;
+  public onWrite?: (path: string, body: JsonObject) => void;
   private counter = 10;
   private comment = '';
   private readonly zip = archive();
 
-  api(token = 'synthetic-access') {
+  public api(token = 'synthetic-access') {
     return new AieApi('https://aie.test', token, this.request);
   }
   private nextId() {
     return `bbbbbbbb-bbbb-bbbb-bbbb-${String(this.counter++).padStart(12, '0')}`;
   }
 
-  request: typeof fetch = async (input, init = {}) => {
-    const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input : input.url);
+  public request: typeof fetch = async (input, init = {}) => {
+    const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
     const method = init.method ?? 'GET';
     const pathname = decodeURIComponent(url.pathname);
     const body = typeof init.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined;
@@ -131,22 +165,44 @@ export class AieFixture {
       authorization: new Headers(init.headers).get('authorization'),
     });
     const fault = this.faults.get(`${method} ${pathname}`);
-    if (fault) return json(fault.body ?? { errorCode: 'FORBIDDEN' }, fault.status);
+    if (fault) {
+      return json(fault.body ?? { errorCode: 'FORBIDDEN' }, fault.status);
+    }
     const object = body && typeof body === 'object' && !Array.isArray(body) ? data(body) : {};
-    if (method !== 'GET') this.onWrite?.(pathname, object);
-    if (pathname === '/api/versions/package/current')
+    if (method !== 'GET') {
+      this.onWrite?.(pathname, object);
+    }
+    if (pathname === '/api/versions/package/current') {
       return new Response('6.4.0.1234', { headers: { 'Content-Type': 'text/plain' } });
-    if (pathname === '/api/auth/users/current') return json({ id: ids.user, login: 'fixture' });
-    if (pathname.endsWith('/permissions')) return json([]);
-    if (pathname === '/api/auth/refreshToken') return json({ accessToken: 'refreshed-access' });
-    if (pathname === '/api/auth/signout') return empty();
-    if (pathname === '/api/projects') return json([{ id: ids.project, name: 'fixture', projectType: 'Permanent' }]);
-    if (pathname === `/api/branches/${ids.branch}/projectId`) return json(ids.project);
-    if (pathname === `/api/branches/${ids.branch}`)
+    }
+    if (pathname === '/api/auth/users/current') {
+      return json({ id: ids.user, login: 'fixture' });
+    }
+    if (pathname.endsWith('/permissions')) {
+      return json([]);
+    }
+    if (pathname === '/api/auth/refreshToken') {
+      return json({ accessToken: 'refreshed-access' });
+    }
+    if (pathname === '/api/auth/signout') {
+      return empty();
+    }
+    if (pathname === '/api/projects') {
+      return json([{ id: ids.project, name: 'fixture', projectType: 'Permanent' }]);
+    }
+    if (pathname === `/api/branches/${ids.branch}/projectId`) {
+      return json(ids.project);
+    }
+    if (pathname === `/api/branches/${ids.branch}`) {
       return json({ id: ids.branch, name: 'main', sourcesChangingDate: this.sourceDate });
-    if (pathname === `/api/projects/${ids.project}/branches`) return json([{ id: ids.branch, name: 'main' }]);
-    if (pathname === `/api/branches/${ids.branch}/scanResults`) return json([...this.scans.values()]);
-    if (pathname === `/api/projects/${ids.project}/defaultSettings`)
+    }
+    if (pathname === `/api/projects/${ids.project}/branches`) {
+      return json([{ id: ids.branch, name: 'main' }]);
+    }
+    if (pathname === `/api/branches/${ids.branch}/scanResults`) {
+      return json([...this.scans.values()]);
+    }
+    if (pathname === `/api/projects/${ids.project}/defaultSettings`) {
       return json({
         id: ids.project,
         name: 'fixture',
@@ -156,7 +212,10 @@ export class AieFixture {
         priority: 'Medium',
         projectTargetBasedType: 'SourceBased',
       });
-    if (pathname === `/api/projects/${ids.project}/completeConfiguration`) return empty();
+    }
+    if (pathname === `/api/projects/${ids.project}/completeConfiguration`) {
+      return empty();
+    }
     const selected = new RegExp(
       `^/api/projects/${ids.project}/(settings|analysisRules|securityPolicies|blackBoxSettings|preferredAgentsSettings)$`,
     ).exec(pathname);
@@ -166,66 +225,55 @@ export class AieFixture {
         const prior = structuredClone(this.settings[section]);
         this.settings[section] = { ...this.settings[section], ...object };
         if (section === 'blackBoxSettings') {
-          // Independent fixture for the observed API contract: absent/null
-          // secret leaves preserve, while an explicit empty string clears.
-          for (const path of [
-            ['authentication', 'http', 'password'],
-            ['authentication', 'form', 'password'],
-            ['authentication', 'cookie', 'cookie'],
-            ['proxySettings', 'password'],
-          ]) {
-            const key = path.pop()!;
-            const previous = path.reduce<unknown>(
-              (node, part) => (node && typeof node === 'object' ? data(node)[part] : undefined),
-              prior,
-            );
-            const next = path.reduce<unknown>(
-              (node, part) => (node && typeof node === 'object' ? data(node)[part] : undefined),
-              this.settings[section],
-            );
-            if (
-              next &&
-              typeof next === 'object' &&
-              path[1] !== 'cookie' &&
-              (data(next)[key] == null || (path[0] === 'proxySettings' && data(next)[key] === '')) &&
-              previous &&
-              typeof previous === 'object'
-            )
-              data(next)[key] = data(previous)[key];
-          }
+          preserveFixtureSecrets(prior, this.settings[section]);
         }
         return empty();
       }
       if (section === 'blackBoxSettings' && this.maskBlackboxCredentials) {
         const masked = structuredClone(this.settings[section]);
         const hide = (node: unknown) => {
-          if (node && typeof node === 'object')
+          if (node && typeof node === 'object') {
             for (const [key, value] of Object.entries(node)) {
-              if ((key === 'password' || key === 'cookie') && typeof value === 'string') data(node)[key] = '';
-              else hide(value);
+              if ((key === 'password' || key === 'cookie') && typeof value === 'string') {
+                data(node)[key] = '';
+              } else {
+                hide(value);
+              }
             }
+          }
         };
         hide(masked);
         return json(masked);
       }
       return json(this.settings[section]);
     }
-    if (pathname === '/api/configs/securityPoliciesTemplate') return json('[{ /* policy */ "CountToActualize":1,}]');
-    if (pathname === `/api/projects/${ids.project}/scanSettings/${ids.settings}`)
+    if (pathname === '/api/configs/securityPoliciesTemplate') {
+      return json('[{ /* policy */ "CountToActualize":1,}]');
+    }
+    if (pathname === `/api/projects/${ids.project}/scanSettings/${ids.settings}`) {
       return json({ id: ids.settings, programmingLanguages: ['JavaScript'] });
+    }
     const scan = new RegExp(`^/api/projects/${ids.project}/scanResults/([^/]+)(?:/(.*))?$`).exec(pathname);
     if (scan) {
-      if (!scan[2]) return json(this.scans.get(scan[1]) ?? {}, this.scans.has(scan[1]) ? 200 : 404);
-      if (scan[2] === 'issues') return json([this.issue]);
-      if (scan[2] === 'errors') return json([{ level: 'Warning', message: 'synthetic diagnostic', isCritical: false }]);
+      if (!scan[2]) {
+        return json(this.scans.get(scan[1]) ?? {}, this.scans.has(scan[1]) ? 200 : 404);
+      }
+      if (scan[2] === 'issues') {
+        return json([this.issue]);
+      }
+      if (scan[2] === 'errors') {
+        return json([{ level: 'Warning', message: 'synthetic diagnostic', isCritical: false }]);
+      }
     }
-    if (pathname === `/api/projects/${ids.project}/issues/${ids.issue}`) return json(this.issue);
+    if (pathname === `/api/projects/${ids.project}/issues/${ids.issue}`) {
+      return json(this.issue);
+    }
     if (pathname === `/api/projects/${ids.project}/issues/${ids.issue}/state`) {
       this.issue.approvalState = object.state;
       this.comment = String(object.comment);
       return empty();
     }
-    if (pathname === `/api/history/branches/${ids.branch}`)
+    if (pathname === `/api/history/branches/${ids.branch}`) {
       return json([
         {
           id: 1,
@@ -235,18 +283,26 @@ export class AieFixture {
           comment: this.comment,
         },
       ]);
-    if (pathname === '/api/agents') return json([{ id: ids.agent, name: 'fixture-agent' }]);
-    if (pathname === `/api/agents/${ids.agent}`) return json({ id: ids.agent, name: 'fixture-agent' });
+    }
+    if (pathname === '/api/agents') {
+      return json([{ id: ids.agent, name: 'fixture-agent' }]);
+    }
+    if (pathname === `/api/agents/${ids.agent}`) {
+      return json({ id: ids.agent, name: 'fixture-agent' });
+    }
     if (pathname === '/api/configs/pmRules') {
-      if (method === 'GET') return json([...this.rules.values()]);
+      if (method === 'GET') {
+        return json([...this.rules.values()]);
+      }
       const id = `custom-rule-${this.counter++}`;
       this.rules.set(id, { ...object, id, vulnerabilityType: { id: object.vulnerabilityTypeId } });
-      if (this.ambiguousCreate)
+      if (this.ambiguousCreate) {
         this.rules.set(id + '-concurrent', {
           ...object,
           id: id + '-concurrent',
           vulnerabilityType: { id: object.vulnerabilityTypeId },
         });
+      }
       return empty();
     }
     const rule = /^\/api\/configs\/pmRules\/([^/]+)$/.exec(pathname);
@@ -258,7 +314,7 @@ export class AieFixture {
       return json(this.rules.get(rule[1]) ?? {}, this.rules.has(rule[1]) ? 200 : 404);
     }
     if (pathname === '/api/configs/pmGroups') {
-      if (method === 'GET')
+      if (method === 'GET') {
         return json(
           [...this.groups.values()].map((group) => ({
             id: group.id,
@@ -266,6 +322,7 @@ export class AieFixture {
             rulesCount: data(group).rules instanceof Array ? (group.rules as unknown[]).length : 0,
           })),
         );
+      }
       const id = this.nextId();
       this.groups.set(id, { ...object, id });
       return empty();
@@ -273,35 +330,46 @@ export class AieFixture {
     const group = /^\/api\/configs\/pmGroups\/([^/]+)(?:\/(rules))?$/.exec(pathname);
     if (group) {
       const entry = this.groups.get(group[1]);
-      if (!entry) return json({}, 404);
-      if (group[2]) return json((entry.rules as string[]).map((id) => ({ id })));
+      if (!entry) {
+        return json({}, 404);
+      }
+      if (group[2]) {
+        return json((entry.rules as string[]).map((id) => ({ id })));
+      }
       if (method === 'PATCH') {
         this.groups.set(group[1], { ...entry, ...object });
         return json(group[1]);
       }
       return json({ id: entry.id, name: entry.name, rulesCount: (entry.rules as string[]).length });
     }
-    if (pathname === `/api/projects/${ids.project}` && method === 'GET')
+    if (pathname === `/api/projects/${ids.project}` && method === 'GET') {
       return json({ id: ids.project, projectType: 'Permanent' });
+    }
     if (pathname === '/api/pmRuleVulnTypes') {
-      if (method === 'GET') return json([...this.types.values()]);
+      if (method === 'GET') {
+        return json([...this.types.values()]);
+      }
       const id = this.nextId();
       this.types.set(id, { ...object, id });
       return json(id);
     }
     const type = /^\/api\/pmRuleVulnTypes\/([^/]+)$/.exec(pathname);
-    if (type) return json(this.types.get(type[1]) ?? {}, this.types.has(type[1]) ? 200 : 404);
+    if (type) {
+      return json(this.types.get(type[1]) ?? {}, this.types.has(type[1]) ? 200 : 404);
+    }
     if (
       pathname === '/api/store/project/archive' ||
       pathname === `/api/store/${ids.project}/branches/${ids.branch}/sources`
     ) {
-      if (method === 'GET')
+      if (method === 'GET') {
         return new Response(new Uint8Array(await this.zip).buffer, { headers: { 'Content-Type': 'application/zip' } });
-      if (init.body)
+      }
+      if (init.body) {
         for await (const chunk of init.body as unknown as AsyncIterable<Uint8Array>) {
           void chunk;
           /* Consume the actual streaming body. */
         }
+      }
       this.sourceDate = new Date(Date.parse(this.sourceDate) + 1000).toISOString();
       return pathname.endsWith('/archive') ? json({ projectId: ids.project, branchId: ids.branch }) : empty();
     }
@@ -325,8 +393,12 @@ export class AieFixture {
         this.queueMode = 'missing';
         return empty();
       }
-      if (this.queueMode === 'assigned') return json({ errorCode: 'QUEUE_ITEM_ALREADY_ASSIGNED_TO_AGENT' }, 400);
-      if (this.queueMode === 'missing') return json({ errorCode: 'QUEUE_ITEM_NOT_FOUND' }, 400);
+      if (this.queueMode === 'assigned') {
+        return json({ errorCode: 'QUEUE_ITEM_ALREADY_ASSIGNED_TO_AGENT' }, 400);
+      }
+      if (this.queueMode === 'missing') {
+        return json({ errorCode: 'QUEUE_ITEM_NOT_FOUND' }, 400);
+      }
       return json({
         id: ids.queue,
         scanObject: { projectId: ids.project, branchId: ids.branch },
@@ -336,7 +408,9 @@ export class AieFixture {
     const stop = /^\/api\/scans\/([^/]+)\/stop$/.exec(pathname);
     if (stop) {
       const entry = this.scans.get(stop[1]);
-      if (entry) entry.progress = { stage: 'Aborted', value: 0 };
+      if (entry) {
+        entry.progress = { stage: 'Aborted', value: 0 };
+      }
       return empty();
     }
     throw new Error(`Fixture route not implemented: ${method} ${pathname}`);

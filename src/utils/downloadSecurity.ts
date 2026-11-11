@@ -1,6 +1,6 @@
 import { confirm, isCancel } from '@clack/prompts';
+import type { DownloadOptions } from '../services/installer/models.js';
 import { logger as log } from './logger.js';
-import type { DownloadOptions } from './downloader.js';
 
 export const ALLOW_INSECURE_TLS_ENV = 'PTAI_MCP_ALLOW_INSECURE_TLS';
 
@@ -24,5 +24,6 @@ async function confirmInsecureTls(url: string): Promise<boolean> {
     message: 'Download without verifying TLS certificates? Continue only if you trust the network.',
     initialValue: false,
   });
+
   return !isCancel(answer) && answer;
 }

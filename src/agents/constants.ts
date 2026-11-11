@@ -34,5 +34,7 @@ export const AGENT_IDS = {
   OPEN_CODE: 'opencode',
 } as const;
 
-export const STOP_TOOL_NAME = 'trigger_scan';
-export const MCP_SERVER_NAME = 'ptai_analyzer';
+export const CONFIG_FORMATS = { TOML: 'toml' } as const;
+export const RULES_DIRECTORY = 'rules';
+
+export const GeminiConfigPath = { Directory: '.gemini', Guide: 'GEMINI.md' } as const;

@@ -1,6 +1,7 @@
-import { beforeEach, afterEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { localCatalog } from '../src/local/catalog.js';
 import { LocalRuntime } from '../src/local/runtime.js';
+import { LocalToolName } from '../src/local/tool-names.js';
 
 const fake = vi.hoisted(() => ({
   exists: true,
@@ -24,24 +25,26 @@ vi.mock('../src/utils/paths.js', () => ({
 }));
 vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
   StdioClientTransport: class {
-    stderr = { on: fake.resume };
+
+    public stderr = { on: fake.resume };
   },
 }));
 vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
   Client: class {
-    onclose?: () => void;
-    constructor() {
+
+    public onclose?: () => void;
+    public constructor() {
       fake.clients.push(this);
     }
-    connect = fake.connect;
-    close = fake.close;
-    request = fake.request;
-    listTools = fake.tools;
-    listResources = fake.resources;
-    listResourceTemplates = fake.templates;
-    listPrompts = fake.prompts;
-    readResource = fake.readResource;
-    getPrompt = fake.getPrompt;
+    public connect = fake.connect;
+    public close = fake.close;
+    public request = fake.request;
+    public listTools = fake.tools;
+    public listResources = fake.resources;
+    public listResourceTemplates = fake.templates;
+    public listPrompts = fake.prompts;
+    public readResource = fake.readResource;
+    public getPrompt = fake.getPrompt;
   },
 }));
 beforeEach(() => {
@@ -58,6 +61,12 @@ beforeEach(() => {
 });
 afterEach(() => vi.restoreAllMocks());
 const params = { name: 'get_scan_status', arguments: {} };
+
+it('keeps the named local tools complete and distinguishes triggering from stopping a scan', () => {
+  expect(Object.values(LocalToolName).sort()).toEqual(localCatalog.tools.map((tool) => tool.name).sort());
+  expect(LocalToolName.TriggerScan).toBe('trigger_scan');
+  expect(LocalToolName.StopScan).toBe('stop_scan');
+});
 
 it('connects once on demand, accepts matching schemas regardless of bundle build, and forwards resources/prompts', async () => {
   const runtime = new LocalRuntime(['--fixture']);

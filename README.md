@@ -72,7 +72,7 @@ reports completed stages and known IDs, and does not roll back server changes or
 stop a scan automatically. Jobs are held only in the current MCP process.
 
 Create/upload applies the union of `.aiignore` and `.ptaiignore`, always excludes
-`.git`, skips symbolic links and converts an included `.aiproj` only inside the
+`.git`, skips symbolic links and converts an included `.aiproj.json` only inside the
 archive. Downloads require a new destination directory and publish under its
 `sources` child. Branch downloads do not guarantee the exact snapshot of a
 historical scan. Inspect `effects` and known IDs after an interrupted change
@@ -273,6 +273,10 @@ applicable Positive Technologies license agreement. This package does not
 grant additional rights to use, modify, or redistribute that bundle.
 
 ## Development
+
+See [Architecture and code quality](./docs/architecture.md) for module boundaries,
+lint rules and the function/file size limits. Run `npm run quality:report`
+to inspect the current distribution.
 
 ```bash
 npm install

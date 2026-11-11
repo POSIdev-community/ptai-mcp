@@ -1,16 +1,17 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
 import { afterEach, describe, expect, it } from 'vitest';
 
 const script = fileURLToPath(new URL('../scripts/audit-runtime.mjs', import.meta.url));
 const temporary: string[] = [];
 afterEach(async () => {
   for (const root of temporary.splice(0)) {
-    if (path.dirname(root) !== os.tmpdir() || !path.basename(root).startsWith('ptai-bundled-audit-'))
+    if (path.dirname(root) !== os.tmpdir() || !path.basename(root).startsWith('ptai-bundled-audit-')) {
       throw new Error('Unexpected audit fixture cleanup path');
+    }
     await fs.rm(root, { recursive: true, force: true });
   }
 });

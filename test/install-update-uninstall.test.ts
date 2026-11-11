@@ -17,7 +17,8 @@ const unpackBundle = vi.fn(async (...args: unknown[]) => {
   onProgress?.({ extracted: 1, total: 2 });
   onProgress?.({ extracted: 2, total: 2 });
 });
-vi.mock('../src/utils/downloader.js', () => ({ downloadBundle, unpackBundle }));
+vi.mock('../src/services/installer/download.js', () => ({ downloadBundle }));
+vi.mock('../src/services/installer/extraction.js', () => ({ unpackBundle }));
 const killAnalyzerProcesses = vi.fn(async () => ({ stopped: [], notRunning: [] }));
 vi.mock('../src/utils/processes.js', () => ({ killAnalyzerProcesses }));
 const configureCommand = vi.fn(async () => undefined);

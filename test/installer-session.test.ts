@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
 import yazl from 'yazl';
-import { prepareBundleDirectory, unpackBundle } from '../src/utils/downloader.js';
+import { prepareBundleDirectory, unpackBundle } from '../src/services/installer/extraction.js';
 
 const roots: string[] = [];
 afterEach(async () => {
