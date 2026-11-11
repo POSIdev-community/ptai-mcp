@@ -1,0 +1,17 @@
+[
+  {
+    "user": "dev.user",
+    "ciphertext": "nTjAU8k8Db1Pvhz4T3YHb2Ms+I1a/jxkjiL2wNFnR5sryEf/LuRJjc00QZAcERXjlPGpnrwtiZ2dcwgyR9PZbGF3+vqB7Tg/PRvGAcNKx9E7+sbqXIr6zdTBxl6D5tdJuSBFU/FhJx3DragJSxIemQp7Sah6Iqgw5R6tWNacuT0=",
+    "machine": "HOST-01"
+  },
+  {
+    "user": "alice",
+    "ciphertext": "FWfVk1RYJ0x/cyK2AYh0/iyYBon5rwqjxniel0eehvlDhFX8DK+V6nsM/lfwQzeauPk7Qwa+cFw4g7WgutqPXXydWsXhVwpSg3EECs6ZdZUt3e8O/jem7dWAVRvDlj5gA6auQl0BUdIOpH417pODPSkZ1kSrtgbkWO9MOd/du/0=",
+    "machine": "DEVBOX"
+  },
+  {
+    "user": "",
+    "ciphertext": "Ih3Nrf6Jq8Dex2FNA0QVXJXmqgLLyZCBYvQFh3Q1JzunvNXRHM6X3k/T23Z92OrgnpGUI1q7F6+E/g24R6yV+zpwAnly2UQ00ehmzQgH/84jH4xRNors+KXUkss+flMQgq8dXZSSd4+1QTAU7T4JEwZ4+in+o3JbBXOxeovK8+o=",
+    "machine": ""
+  }
+]

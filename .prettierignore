@@ -3,3 +3,8 @@ dist
 coverage
 .cursor
 bin
+.runtime
+.cache
+src/vendor
+artifacts-*.json
+artifacts-*.jsonl

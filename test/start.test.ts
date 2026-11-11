@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const spawn = vi.fn();
+const startMcpServer = vi.fn();
+vi.mock('../src/server.js', () => ({ startMcpServer }));
 let expectedVersion: string | null | Error = '2.0.0';
 vi.mock('node:child_process', () => ({ spawn }));
 vi.mock('../src/utils/paths.js', () => ({
@@ -17,12 +19,29 @@ vi.mock('../src/utils/paths.js', () => ({
   readVersionsJson: () => ({ 'AI.INFRASTRUCTURE.INSTALLATOR': '1.0.0' }),
 }));
 
-const { resolveExitCode, startCommand } = await import('../src/commands/start.js');
+const {
+  resolveExitCode,
+  startProxyCommand: startCommand,
+  startCommand: startNodeCommand,
+} = await import('../src/commands/start.js');
 
 describe('start command', () => {
   beforeEach(() => {
     spawn.mockReset();
+    startMcpServer.mockReset();
     vi.restoreAllMocks();
+  });
+
+  it('starts the independent Node server without checking or launching the analyzer', async () => {
+    const originalArgv = process.argv;
+    process.argv = ['node', 'cli', 'start', 'workspace'];
+    try {
+      await startNodeCommand();
+      expect(startMcpServer).toHaveBeenCalledWith(['workspace']);
+      expect(spawn).not.toHaveBeenCalled();
+    } finally {
+      process.argv = originalArgv;
+    }
   });
 
   it('reports a missing proxy and exits', () => {

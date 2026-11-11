@@ -16,7 +16,12 @@ type CommandSpec = {
 };
 
 const COMMAND_SPECS: readonly CommandSpec[] = [
-  { name: 'start', description: 'Start the MCP proxy', action: startCommand, allowUnknownOption: true },
+  {
+    name: 'start',
+    description: 'Start the MCP server with local and AIE tools',
+    action: startCommand,
+    allowUnknownOption: true,
+  },
   { name: 'install', description: 'Download and install the analyzer bundle', action: installCommand },
   { name: 'configure', description: 'Configure MCP servers and hooks for supported agents', action: configureCommand },
   { name: 'update', description: 'Update the analyzer bundle without prompting', action: updateCommand },

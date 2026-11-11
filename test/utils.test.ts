@@ -543,25 +543,36 @@ describe('bundle unpacking', () => {
   it('uses the Linux extraction command', async () => {
     // Arrange
     const run = vi.fn(async () => ({ stdout: '', stderr: '' }));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-unpack-linux-'));
+    const target = path.join(root, 'bundle');
     const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
 
     // Act
-    await unpackBundle('/tmp/a.tgz', '/tmp/bundle', run);
+    await unpackBundle('/tmp/a.tgz', target, run);
 
     // Assert
-    expect(run).toHaveBeenCalledWith('tar', ['-xzf', '/tmp/a.tgz', '-C', '/tmp/bundle']);
+    expect(run).toHaveBeenCalledWith('tar', [
+      '--exclude=shared_variables',
+      '--exclude=shared_variables.*',
+      '-xzf',
+      '/tmp/a.tgz',
+      '-C',
+      target,
+    ]);
 
     // Cleanup
     platform.mockRestore();
+    await fs.rm(root, { recursive: true, force: true });
   });
 
   it('uses the Windows extraction command', async () => {
     // Arrange
     const run = vi.fn(async () => ({ stdout: '', stderr: '' }));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'ptai-unpack-windows-'));
     const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
 
     // Act
-    await unpackBundle("C:\\a'b.zip", 'C:\\bundle', run);
+    await unpackBundle("C:\\a'b.zip", path.join(root, 'bundle'), run);
 
     // Assert
     expect(run).toHaveBeenCalledWith(
@@ -572,6 +583,7 @@ describe('bundle unpacking', () => {
 
     // Cleanup
     platform.mockRestore();
+    await fs.rm(root, { recursive: true, force: true });
   });
 
   it('reports progress while extracting Windows archives natively', async () => {

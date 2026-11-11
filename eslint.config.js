@@ -4,11 +4,29 @@ import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended'
 
 export default tseslint.config(
   {
-    ignores: ['dist/', 'bin/', 'coverage/', 'node_modules/', '.cursor/'],
+    ignores: ['dist/', 'bin/', 'coverage/', 'node_modules/', '.cursor/', 'src/vendor/', '.runtime/', '.cache/'],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,
   eslintPluginPrettierRecommended,
+  {
+    files: ['scripts/**/*.mjs'],
+    languageOptions: {
+      globals: Object.fromEntries(
+        [
+          'process',
+          'console',
+          'Buffer',
+          'URL',
+          'fetch',
+          'Response',
+          'AbortController',
+          'setTimeout',
+          'clearTimeout',
+        ].map((name) => [name, 'readonly']),
+      ),
+    },
+  },
   {
     rules: {
       '@typescript-eslint/no-explicit-any': 'warn',

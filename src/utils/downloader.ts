@@ -383,8 +383,8 @@ export async function unpackBundle(
     return;
   }
 
-  await removeDirectoryWithRetry(bundleDir);
-  await fsp.mkdir(bundleDir, { recursive: true });
+  if (!['win32', 'linux'].includes(process.platform)) throw new Error(`Unsupported OS: ${process.platform}`);
+  await prepareBundleDirectory(bundleDir);
 
   if (process.platform === 'win32') {
     if (run === defaultBundleRunner) {
@@ -406,11 +406,38 @@ export async function unpackBundle(
   }
 
   if (process.platform === 'linux') {
-    await run('tar', ['-xzf', archivePath, '-C', bundleDir]);
+    await run('tar', [
+      '--exclude=shared_variables',
+      '--exclude=shared_variables.*',
+      '-xzf',
+      archivePath,
+      '-C',
+      bundleDir,
+    ]);
     return;
   }
 
   throw new Error(`Unsupported OS: ${process.platform}`);
+}
+
+/** Keep the shared AIE session and its lock at the same path/inode while
+ * replacing analyzer binaries. AIE-only sign-in can predate bundle installation. */
+export async function prepareBundleDirectory(bundleDir: string): Promise<void> {
+  const root = path.resolve(bundleDir);
+  if (root === path.parse(root).root) throw new Error('Refusing to replace a filesystem root.');
+  try {
+    if ((await fsp.lstat(root)).isSymbolicLink()) throw new Error('Bundle directory must not be a symbolic link.');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  await fsp.mkdir(root, { recursive: true });
+  const preserved = new Set(['shared_variables', 'shared_variables.session-lock', 'shared_variables.node-lock']);
+  for (const entry of await fsp.readdir(root, { withFileTypes: true })) {
+    if (preserved.has(entry.name.toLowerCase())) continue;
+    const target = path.resolve(root, entry.name);
+    if (path.dirname(target) !== root) throw new Error('Refusing unsafe bundle cleanup.');
+    await removeDirectoryWithRetry(target);
+  }
 }
 
 async function extractWindowsZip(
@@ -433,6 +460,7 @@ async function extractWindowsZip(
     '    $relative = $entry.FullName.Replace("/", [System.IO.Path]::DirectorySeparatorChar);',
     '    $target = [System.IO.Path]::GetFullPath([System.IO.Path]::Combine($destination, $relative));',
     '    if (-not $target.StartsWith($destination + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)) { throw "Unsafe archive path: $($entry.FullName)"; }',
+    '    if ([System.IO.Path]::GetDirectoryName($target).Equals($destination, [System.StringComparison]::OrdinalIgnoreCase) -and [System.IO.Path]::GetFileName($target) -like "shared_variables*") { continue; }',
     '    [System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($target)) | Out-Null;',
     '    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $target, $true);',
     '    $extracted++; Write-Output ("PTAI_PROGRESS:{0}:{1}" -f $extracted, $total);',

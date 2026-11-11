@@ -10,8 +10,15 @@ import {
   readVersionsJson,
 } from '../utils/paths.js';
 import { logger } from '../utils/logger.js';
+import { startMcpServer } from '../server.js';
 
-export function startCommand() {
+export async function startCommand() {
+  const args = process.argv.slice(3);
+  if (args[0] === 'hook' || args[0] === 'hook-start') return startProxyCommand();
+  await startMcpServer(args);
+}
+
+export function startProxyCommand() {
   const proxyPath = getProxyPath();
 
   if (!fs.existsSync(proxyPath)) {
