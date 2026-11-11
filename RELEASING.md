@@ -25,7 +25,7 @@ Registry name. The `npm run metadata:sync` command copies those values into
 
 Before starting, verify that you have:
 
-- Node.js 18 or newer and npm;
+- Node.js 18.19.x, or Node.js 20.6 or newer, and npm;
 - publish access to the `posidev-community` npm organization;
 - GitHub permission to push and create releases in
   `POSIdev-community/ptai-mcp`;
@@ -80,10 +80,46 @@ npm run metadata:check
 
 ## 2. Verify the package
 
+The AIE POC can be reviewed locally without pushing, publishing, installing a new
+BE4P bundle or supplying production telemetry credentials. The default build
+writes a disabled `dist/telemetry-config.json`. For an eventual release build,
+set `PTAI_RELEASE_BUILD=true` together with `PTAI_FLUS_HOST` and `PTAI_FLUS_TOKEN`
+from the existing BE4P release configuration, then build and inspect the artifact.
+`scripts/write-flus-config.mjs` writes the actual
+`dist/telemetry-config.json` from the environment at build time.
+The release flag fails the build when either required value is absent.
+`PTAI_FLUS_ENVIRONMENT=test` selects the test contour; the default is production.
+Do not commit the generated configuration or real tokens. The npm artifact must
+contain the generated configuration. A release still needs a real FLUS-to-Datalake
+verification; a mocked protobuf receiver does not establish that result.
+Because the npm artifact is public, confirm that its FLUS push token is approved
+for distribution to package consumers. Otherwise change the release configuration
+to provide a token at runtime before publishing.
+Before release, verify FLUS delivery through downstream analytics, wire release
+CI secrets and check the native macOS/Windows/Linux installation and IDE session
+matrix. Packaged Windows MCP clients may redirect AppData to LocalCache, so
+session sharing with an IDE must be verified in the actual release environment.
+
+Before public delivery, confirm redistribution terms for the generated AIE 6.3
+API contract and complete the platform/acceptance matrix. Pair the configured
+installer bundle version 3.0.1.1505 with the release candidate.
+Do not turn the optional BE4P shared-session patch into a POC installation
+requirement without a separate owner decision.
+
 Run the complete verification and inspect the publishable artifact:
+
+The pinned SDK1.32.2 is a build dependency: tsup includes the stdio modules in
+the CLI without installing its unused HTTP adapter in consumer environments.
+Keep that composition when supporting Node18. The build writes a component
+manifest and complete licenses into dist. Run `npm run audit:runtime` after
+building: it audits both installed runtime dependencies and compiled components,
+even when npm marks the original SDK dependency as dev. Full dev audit still
+has separately reported advisories. Engine-strict clean installation is part
+of artifact smoke.
 
 ```powershell
 npm run verify
+npm run audit:runtime
 npm pack --dry-run
 npm run smoke:artifact
 ```

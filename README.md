@@ -1,6 +1,6 @@
 # @posidev-community/ptai-mcp
 
-Standalone CLI launcher for the PT Application Inspector MCP.
+PT Application Inspector MCP with local analysis and AIE server tools.
 
 ## Publication identities
 
@@ -18,8 +18,9 @@ and launch the npm package; it is not read by the launcher at runtime.
 
 ## Requirements
 
-- Node.js 18 or newer
-- A PT Application Inspector bundle installed in the platform-specific bundle directory
+- Node.js 18.19.x or newer in the 18.x line, or Node.js 20.6 or newer
+- AIE 6.3.x or 6.4.x for server tools; both use the API 6.3 client
+- The existing local analyzer bundle for local tools and hooks
 
 ## Usage
 
@@ -29,8 +30,11 @@ Install the package with npm and start the MCP:
 npx @posidev-community/ptai-mcp start
 ```
 
-The `start` command fails fast when the MCP is not installed. Download and
-install the analyzer bundle with:
+`start` launches a Node stdio MCP server without requiring the analyzer bundle.
+The catalog contains 22 `aie_*` tools and 11 local tools, with local resources
+and prompts. AIE tools work independently of the local analyzer. The local proxy
+starts on the first local request; its catalog is checked for compatibility.
+To use local analysis, install the analyzer bundle with:
 
 ```bash
 npx @posidev-community/ptai-mcp install
@@ -40,6 +44,109 @@ Installation stops running analyzer processes, downloads the configured bundle,
 and unpacks it into the platform bundle directory. The production endpoint is
 checked first; development builds may be available only from the PT test
 endpoint. Agent configuration can then be managed with `configure`.
+
+The POC does not require a BE4P update. Installation preserves the existing
+`shared_variables` session file. With legacy BE4P, concurrent token refresh or
+provider shutdown can still require signing in again; Node cannot fully change
+another process's session behavior.
+An MCP client running in a packaged Windows app may redirect AppData to its own
+LocalCache. In that environment, IDE and MCP sessions may not share the same
+physical file; use `aie_get_context` to check the MCP connection and sign in
+through `aie_auth` when needed. Cross-process session pickup requires a native
+integration check in each supported client environment.
+
+## AIE workflow
+
+Call `aie_get_context` to inspect readiness, then `aie_auth` with `action=login`
+and an HTTPS `server_url`. Follow the system browser. If callback delivery fails,
+open the returned local `manual_url` and enter the code there. Do not put codes,
+passwords or tokens in tool arguments. `cancel_login` cancels a pending attempt;
+`logout` ends the shared session. Closing MCP preserves the session.
+
+Use project, branch and scan lists to select explicit IDs before reading findings,
+triaging, updating settings or starting a scan. Lists return bounded pages and
+opaque continuation cursors. Settings return write schemas and revisions; include
+the revision when saving to detect stale edits. Long source/scan workflows return
+an `operation_id`; poll `aie_get_operation` for the retained result. Cancellation
+reports completed stages and known IDs, and does not roll back server changes or
+stop a scan automatically. Jobs are held only in the current MCP process.
+
+Create/upload applies the union of `.aiignore` and `.ptaiignore`, always excludes
+`.git`, skips symbolic links and converts an included `.aiproj` only inside the
+archive. Downloads require a new destination directory and publish under its
+`sources` child. Branch downloads do not guarantee the exact snapshot of a
+historical scan. Inspect `effects` and known IDs after an interrupted change
+before retrying it. A fast queue transition can leave scan correlation unconfirmed;
+select an explicit scan rather than assuming the latest scan is yours.
+
+BlackBox settings expose per-field credential semantics. Omitted/null HTTP and
+Form passwords preserve the value; empty clears it. Empty proxy passwords preserve
+it. Readable RawCookie is retained for adjacent edits. If the server hides a
+RawCookie, replace it explicitly or disable that authentication type before a
+write requiring preservation. Accepted hidden password replacements report
+`verified=false` and `verification.unverified_fields`; inspect these fields before
+claiming exact readback.
+
+AIE HTTPS always verifies certificates. For corporate certificates, set
+`NODE_EXTRA_CA_CERTS` to a trusted PEM file before starting MCP.
+
+## Telemetry
+
+Release builds send bounded technical metrics using the existing FLUS contract.
+Source code, comments, paths, AIE URLs, setting values and tokens are excluded.
+Set `PTAI_DISABLE_TELEMETRY=true` in the MCP process environment to disable Node
+collection/export and pass the opt-out to the local proxy. Existing IDE plugins
+use their own telemetry configuration. Local builds without release FLUS
+configuration have no sender; see [RELEASING.md](RELEASING.md).
+
+Collection is enabled by default in configured release artifacts. The receiver
+is the release-configured FLUS/GUS HTTPS origin at `/telemetry/v1/push/`;
+`PTAI_FLUS_HOST` supplies that origin during the build. Invocation counts,
+durations in milliseconds and confirmed action counts carry only the tool name,
+outcome, normalized error code, whitelisted action/section/kind and AIE version.
+Resource fields are service name/version, OS, test/production contour, a random
+process-session UUID and an installation pseudonym. The pseudonym is the first
+16 uppercase hex characters of SHA-256 of OS name, host name and available CPU
+count; the host name itself is not sent. It can correlate activity with BE4P on
+the same installation; it is not an anonymous per-call identifier.
+For the existing `ApplicationInspectorPlugins` table, MCP also emits the same
+values as `user_id`, `session_id` and `plugin_version`. Its `service_name` is
+`ptai-mcp` (BE4P uses `BE4P.Telemetry`), and its metric names start with
+`ptai.mcp.aie.`. These fields distinguish MCP rows without overloading the
+BE4P metric names.
+
+Example metric attributes (illustrative values):
+
+```json
+{
+  "metric": "ptai.mcp.aie.tool.invocations",
+  "value": 1,
+  "attributes": {
+    "tool": "aie_update_project_settings",
+    "outcome": "success",
+    "error_code": "NONE",
+    "section": "scan",
+    "aie_version": "6.4.0.7986"
+  }
+}
+```
+
+The SDK aggregates in memory, exports about once per minute and does not keep a
+disk retry queue. A failed export can lose metrics and does not fail a tool.
+Payloads are bounded to 256 KiB with one export in flight; shutdown flush is
+bounded. Workflow acceptance and completion are different events, and repeated
+polling does not create extra completion events. The intended analytics target is
+the existing `application_inspector_plugins_metrics` pipeline; end-to-end
+ingestion of MCP metrics still requires verification. Actual retention periods
+and access permissions must be confirmed with its owner before release; no
+additional retention policy is established by this package.
+
+To opt out, put `"env": { "PTAI_DISABLE_TELEMETRY": "true" }` in the MCP launch
+configuration and restart the MCP server. The value is case-insensitive. The
+opt-out creates no Node collector/export queue/exporter and makes no Node
+DNS/HTTP requests to FLUS. It does not disable required AIE API requests.
+
+## Analyzer installation and agent configuration
 
 If one of the trusted PT installer endpoints presents an untrusted TLS certificate, the CLI asks for
 explicit confirmation before disabling certificate verification for that
