@@ -143,43 +143,6 @@ export function preserveReadExtras(
   validated: JsonObject,
   changes: JsonObject,
 ): JsonObject {
-  function restore(schema: JsonObject, before: unknown, after: unknown, patch: unknown, root = false): unknown {
-    if (typeof schema.$ref === 'string') {
-      return restore(schemas[schema.$ref.split('/').at(-1)!], before, after, patch, root);
-    }
-
-    if (Array.isArray(after)) {
-      return patch === undefined && Array.isArray(before) ? structuredClone(before) : after;
-    }
-
-    if (!after || typeof after !== 'object' || Array.isArray(after)) {
-      return after;
-    }
-
-    const prior = before && typeof before === 'object' && !Array.isArray(before) ? (before as JsonObject) : {};
-    const delta = patch && typeof patch === 'object' && !Array.isArray(patch) ? (patch as JsonObject) : {};
-    const properties = schema.properties as JsonObject | undefined;
-    const output: JsonObject = { ...after };
-
-    if (!root && properties) {
-      for (const [key, value] of Object.entries(prior)) {
-        if (!(key in properties) && !isUnsafeObjectKey(key)) {
-          output[key] = structuredClone(value);
-        }
-      }
-    }
-
-    if (properties) {
-      for (const [key, value] of Object.entries(output)) {
-        if (properties[key] && typeof properties[key] === 'object') {
-          output[key] = restore(properties[key] as JsonObject, prior[key], value, delta[key]);
-        }
-      }
-    }
-
-    return output;
-  }
-
   return record(restore(schemas[name], original, validated, changes, true));
 }
 
@@ -204,6 +167,64 @@ export function checkReadback(actual: unknown, expected: unknown) {
       },
     );
   }
+}
+
+function restore(schema: JsonObject, before: unknown, after: unknown, patch: unknown, root = false): unknown {
+  if (typeof schema.$ref === 'string') {
+    return restore(schemas[schema.$ref.split('/').at(-1)!], before, after, patch, root);
+  }
+
+  if (Array.isArray(after)) {
+    return patch === undefined && Array.isArray(before) ? structuredClone(before) : after;
+  }
+
+  if (!after || typeof after !== 'object') {
+    return after;
+  }
+
+  return restoreObject(schema, before, record(after), patch, root);
+}
+
+function restoreObject(
+  schema: JsonObject,
+  before: unknown,
+  after: JsonObject,
+  patch: unknown,
+  root: boolean,
+): JsonObject {
+  const properties = schema.properties as JsonObject | undefined;
+  const output: JsonObject = { ...after };
+
+  if (!properties) {
+    return output;
+  }
+
+  const prior = objectOrEmpty(before);
+  const delta = objectOrEmpty(patch);
+
+  if (!root) {
+    copyReadExtras(properties, prior, output);
+  }
+
+  for (const [key, value] of Object.entries(output)) {
+    if (properties[key] && typeof properties[key] === 'object') {
+      output[key] = restore(properties[key] as JsonObject, prior[key], value, delta[key]);
+    }
+  }
+
+  return output;
+}
+
+function copyReadExtras(properties: JsonObject, before: JsonObject, output: JsonObject): void {
+  for (const [key, value] of Object.entries(before)) {
+    if (!(key in properties) && !isUnsafeObjectKey(key)) {
+      output[key] = structuredClone(value);
+    }
+  }
+}
+
+function objectOrEmpty(value: unknown): JsonObject {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as JsonObject) : {};
 }
 
 function convert(value: unknown): unknown {

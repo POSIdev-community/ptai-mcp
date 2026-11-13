@@ -1,8 +1,13 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 import type { SchemaObject } from 'ajv';
+import { IssueType } from '../../vendor/aie-v63/src/models/index.js';
 import { AuthAction } from '../auth/models.js';
 import { PmAction, PmKind } from '../pm/models.js';
+import { IssueView, Location } from '../projects/models.js';
+import { ScanState } from '../scans/scan-status.js';
 import { SettingsSection } from '../settings/models.js';
+import { CreateKind } from '../sources/models.js';
+import { SourceKind } from '../sources/source-reader.js';
 import { AieToolName } from '../tool-names.js';
 import type { ToolArguments } from './tool-contract.js';
 
@@ -13,13 +18,34 @@ const branchTargetProperties = { ...projectTargetProperties, branch_id: uuidSche
 const scanTargetProperties = { ...projectTargetProperties, scan_id: uuidSchema, branch_id: uuidSchema };
 const issueTargetProperties = { ...scanTargetProperties, issue_id: uuidSchema };
 const paginationProperties = {
-  page_size: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
-  cursor: nonEmptyStringSchema,
+  page_size: {
+    type: 'integer',
+    minimum: 1,
+    maximum: 100,
+    default: 20,
+    description: 'Items per page (default 20, max 100). total counts all matching items; summary total counts groups.',
+  },
+  cursor: {
+    ...nonEmptyStringSchema,
+    description:
+      'For the next page, pass next_cursor with the SAME target, filters and page_size (size may be omitted). Null next_cursor ends the list. Immutable snapshot expires 10 minutes after creation or on restart; complete=false means more pages.',
+  },
 };
 
 const settingsSectionSchema = { type: 'string', enum: Object.values(SettingsSection) } as const satisfies SchemaObject;
 const pmKindSchema = { type: 'string', enum: Object.values(PmKind) } as const satisfies SchemaObject;
 const jsonObjectSchema = { type: 'object' } as const satisfies SchemaObject;
+const operationProperties = { operation_id: nonEmptyStringSchema, ...branchTargetProperties, scan_id: uuidSchema };
+const operationAlternatives = [
+  {
+    properties: { operation_id: nonEmptyStringSchema, project_id: false, branch_id: false, scan_id: false },
+    required: ['operation_id'],
+  },
+  {
+    properties: { operation_id: false, ...branchTargetProperties, scan_id: uuidSchema },
+    required: ['project_id', 'branch_id', 'scan_id'],
+  },
+];
 
 export const aieCatalog: Tool[] = [
   defineTool({
@@ -60,20 +86,45 @@ export const aieCatalog: Tool[] = [
   defineTool({
     name: AieToolName.ListScans,
     description: 'List scan summaries of the explicitly selected branch; choose a concrete historical scan ID.',
-    properties: { ...branchTargetProperties, ...paginationProperties },
+    properties: {
+      ...branchTargetProperties,
+      ...paginationProperties,
+      state: { type: 'array', items: { type: 'string', enum: Object.values(ScanState) } },
+      label: { ...nonEmptyStringSchema, description: 'Exact readable label; it may match multiple launches.' },
+      order: {
+        type: 'string',
+        enum: ['asc', 'desc'],
+        default: 'desc',
+        description: 'Sort by scan date. desc with page_size=1 selects latest matching scan.',
+      },
+    },
     required: ['project_id', 'branch_id'],
     readOnly: true,
   }),
   defineTool({
     name: AieToolName.ListIssues,
     description:
-      'Read a short findings page for a scan. Filters combine with AND; values inside a filter use OR. is_new is the server baseline flag. Issue type is the finding category; counter is the UI number, not the ID.',
+      'Read compact findings or summary groups for a scan. Filters combine with AND; array values use OR. Type search uses BE4P exact → substring → all words in any order, case-insensitive, first nonempty level before pagination. Searches internal type, description/CWE titles and component names; search metadata reports unavailable titles. issue_type is the AIE category, not SQL Injection/XSS; is_new is the server baseline flag, counter is the UI number. matched_issues counts all matches including Discard/suppressed; AIE statistics exclude them.',
     properties: {
       ...scanTargetProperties,
       ...paginationProperties,
       severity: { type: 'array', items: nonEmptyStringSchema },
       approval_state: { type: 'array', items: { type: 'string', enum: ['Approval', 'Discard', 'None'] } },
-      issue_type: { type: 'array', items: nonEmptyStringSchema },
+      issue_type: { type: 'array', items: { type: 'string', enum: Object.values(IssueType) } },
+      type: {
+        ...nonEmptyStringSchema,
+        description:
+          'Forgiving type/CWE-title/component search, e.g. sql injection, Pathname Restricted, lodash. Does not correct spelling.',
+      },
+      scan_module: { type: 'array', items: nonEmptyStringSchema },
+      file: {
+        ...nonEmptyStringSchema,
+        description: 'Exact relative file path, slash-normalized and case-insensitive.',
+      },
+      location: { type: 'string', enum: Object.values(Location), default: Location.Either },
+      start_line: { type: 'integer', minimum: 1 },
+      end_line: { type: 'integer', minimum: 1 },
+      view: { type: 'string', enum: Object.values(IssueView), default: IssueView.Items },
       is_new: { type: 'boolean' },
       path: nonEmptyStringSchema,
       counter: { type: 'integer', minimum: 0 },
@@ -92,7 +143,7 @@ export const aieCatalog: Tool[] = [
   defineTool({
     name: AieToolName.TriageIssue,
     description:
-      'Save a manual Approval/Discard/None status and comment, then verify by readback. Supply reasoning based on actually inspected code/evidence.',
+      'Save Approval/Discard/None and comment, verifying the selected issue. An unchanged state with a comment uses the comment endpoint. Empty comment with unchanged state is no-op. AIE asynchronously synchronizes statuses/comments by hash to other branches: verification does not cover that synchronization. Supply inspected evidence.',
     properties: {
       ...issueTargetProperties,
       state: { type: 'string', enum: ['Approval', 'Discard', 'None'] },
@@ -110,18 +161,47 @@ export const aieCatalog: Tool[] = [
     readOnly: false,
   }),
   defineTool({
-    name: AieToolName.CreateProject,
+    name: AieToolName.Create,
     description:
-      'Create a permanent AIE project from local sources and complete its initial configuration. Background operation. Excludes .git, own staging paths and files ignored by root .aiignore/.ptaiignore (gitignore syntax; both exclusion sets are combined). Symlinks are skipped. Local .aiproj.json is unchanged.',
+      'Create kind=project (permanent project plus initial branch/configuration) OR kind=branch (new branch in an existing project with sources). One call runs the workflow; use operation_id to observe. Branch mode preserves project settings and does not write user working-branch selection; the server-derived Plugin default may change (before/after IDs are returned). Excludes .git, staging, .aiignore/.ptaiignore matches; skips symlinks; local .aiproj.json is unchanged. Partial failures retain created IDs, without automatic deletion.',
     properties: {
+      kind: { type: 'string', enum: Object.values(CreateKind) },
+      project_id: uuidSchema,
       source_directory: nonEmptyStringSchema,
       name: nonEmptyStringSchema,
       branch_name: nonEmptyStringSchema,
       description: { type: 'string' },
       scan_changes: jsonObjectSchema,
     },
-    required: ['source_directory', 'name', 'branch_name'],
+    required: ['kind', 'source_directory', 'branch_name'],
+    alternatives: [
+      {
+        properties: { kind: { const: CreateKind.Project }, name: nonEmptyStringSchema, project_id: false },
+        required: ['kind', 'name'],
+      },
+      {
+        properties: { kind: { const: CreateKind.Branch }, project_id: uuidSchema, name: false, scan_changes: false },
+        required: ['kind', 'project_id'],
+      },
+    ],
     readOnly: false,
+  }),
+  defineTool({
+    name: AieToolName.GetSources,
+    description:
+      'Read current branch source tree or a bounded text file range (default 200 lines, max upstream file 1 MiB, output 64 KiB). scan_id validates context but does not freeze files: content_source=current_branch_sources_or_temp, snapshot_match=unknown. kind=tree is paginated; depth bounds traversal. No local download is required.',
+    properties: {
+      ...branchTargetProperties,
+      ...paginationProperties,
+      kind: { type: 'string', enum: Object.values(SourceKind) },
+      path: { type: 'string' },
+      scan_id: uuidSchema,
+      start_line: { type: 'integer', minimum: 1 },
+      end_line: { type: 'integer', minimum: 1 },
+      depth: { type: 'integer', minimum: 1, maximum: 4, default: 1 },
+    },
+    required: ['project_id', 'branch_id', 'kind'],
+    readOnly: true,
   }),
   defineTool({
     name: AieToolName.UploadSources,
@@ -199,51 +279,37 @@ export const aieCatalog: Tool[] = [
   defineTool({
     name: AieToolName.StartScan,
     description:
-      'Queue analysis of a selected branch as a background operation after source readiness. scope defaults to Incremental. queue_id and scan_id are distinct; never assume the latest external scan is ours.',
+      'Queue one scan and normally return scan_id/current state in this call, without waiting for analysis completion. Total wait budget 45 seconds, otherwise returns operation_id/known IDs for follow-up. Label defaults MCP or MCP-<label_suffix>; it is descriptive, not unique and does not select modules. scope defaults Incremental. Exact queue mapping and inferred branch_history correlation are distinguished; ambiguous matches remain unconfirmed. Never repeat an accepted/uncertain enqueue automatically.',
     properties: {
       ...branchTargetProperties,
       scope: { type: 'string', enum: ['Full', 'Incremental'], default: 'Incremental' },
-      label: { type: 'string' },
+      label_suffix: {
+        type: 'string',
+        maxLength: 36,
+        pattern: '^[. _A-Za-z0-9А-Яа-яЁё-]*$',
+        description:
+          'Optional readable suffix, e.g. SCA_SCAN gives MCP-SCA_SCAN. Empty gives MCP. No random suffix is added.',
+      },
     },
-    required: ['project_id', 'branch_id'],
-    readOnly: false,
-  }),
-  defineTool({
-    name: AieToolName.GetScanStatus,
-    description:
-      'Read one selected queue OR scan with progress/statistics and paged messages. Supply exactly one queue_id/scan_id. A successfully read Failed scan is a successful tool result; Done does not guarantee complete checks or no warnings.',
-    properties: {
-      ...branchTargetProperties,
-      queue_id: uuidSchema,
-      scan_id: uuidSchema,
-      include_diagnostics: { type: 'boolean' },
-      ...paginationProperties,
-    },
-    required: ['project_id', 'branch_id'],
-    readOnly: true,
-  }),
-  defineTool({
-    name: AieToolName.StopScan,
-    description:
-      'Request removal of one queued item OR stop of one running scan. Supply exactly one queue_id/scan_id. Acceptance is distinct from confirmed stop; poll the selected run afterward.',
-    properties: { ...branchTargetProperties, queue_id: uuidSchema, scan_id: uuidSchema },
     required: ['project_id', 'branch_id'],
     readOnly: false,
   }),
   defineTool({
     name: AieToolName.GetOperation,
     description:
-      'Read a Node background workflow including completed stages, known IDs, effects and terminal result. Jobs live only in the current process. Polling does not repeat server changes.',
-    properties: { operation_id: nonEmptyStringSchema },
-    required: ['operation_id'],
+      'Read a local workflow by operation_id OR an explicit remote project/branch/scan_id. Launch jobs return workflow_state separately from scan_state and correlation. Optional paged diagnostics. Failed scan is a successful read. Local results remain readable offline under the same verified session; remote errors are separate. Jobs are current-process-only; polling never repeats mutations.',
+    properties: { ...operationProperties, ...paginationProperties, include_diagnostics: { type: 'boolean' } },
+    required: [],
+    alternatives: operationAlternatives,
     readOnly: true,
   }),
   defineTool({
     name: AieToolName.CancelOperation,
     description:
-      'Cooperatively cancel a Node workflow. Already applied server changes are not rolled back; inspect the returned effects/IDs. Stop a server analysis separately with aie_stop_scan.',
-    properties: { operation_id: nonEmptyStringSchema },
-    required: ['operation_id'],
+      'Cancel a local workflow OR stop an explicitly selected remote project/branch/scan_id. Cancelling a launch job requests remote stop only with exact queue correlation; branch_history requires explicit scan_id selection. Applied writes are not rolled back. Stop acceptance differs from confirmed terminal state; poll get_operation. Shutdown/logout do not stop remote scans.',
+    properties: operationProperties,
+    required: [],
+    alternatives: operationAlternatives,
     readOnly: false,
   }),
 ];
@@ -254,7 +320,13 @@ function defineTool<Name extends AieToolName>(definition: ToolDefinition<Name>):
   return {
     name,
     description,
-    inputSchema: { type: 'object', properties, required, additionalProperties: false },
+    inputSchema: {
+      type: 'object',
+      properties,
+      required,
+      additionalProperties: false,
+      ...(definition.alternatives ? { oneOf: definition.alternatives } : {}),
+    },
     annotations: { readOnlyHint: readOnly, destructiveHint: !readOnly, idempotentHint: readOnly, openWorldHint: true },
   };
 }
@@ -265,4 +337,5 @@ interface ToolDefinition<Name extends AieToolName> {
   properties: { [Key in keyof ToolArguments[NoInfer<Name>]]-?: SchemaObject };
   required: Array<keyof ToolArguments[NoInfer<Name>] & string>;
   readOnly: boolean;
+  alternatives?: SchemaObject[];
 }

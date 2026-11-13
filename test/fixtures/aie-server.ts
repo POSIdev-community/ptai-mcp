@@ -137,6 +137,9 @@ export class AieFixture {
     vulnerableCode: { sourceFile: 'src/main.js', dataFlow: [] },
   };
   public sourceDate = '2026-11-10T12:00:00Z';
+  public hasSources = true;
+  public issues?: JsonObject[];
+  public readonly titles = new Map<string, string>();
   public queueMode: 'queued' | 'assigned' | 'running' | 'missing' = 'queued';
   public queueScanId?: string;
   public ambiguousCreate = false;
@@ -197,7 +200,31 @@ export class AieFixture {
       return json({ id: ids.branch, name: 'main', sourcesChangingDate: this.sourceDate });
     }
     if (pathname === `/api/projects/${ids.project}/branches`) {
+      if (method === 'POST') {
+        this.hasSources = false;
+        return json(ids.branch);
+      }
       return json([{ id: ids.branch, name: 'main' }]);
+    }
+    if (pathname === `/api/projects/${ids.project}/branches/working`) {
+      return json(ids.branch);
+    }
+    if (pathname === `/api/branches/${ids.branch}/sourcesSettings`) {
+      return json({ scanTargetName: this.hasSources ? 'sources' : null, localSourceType: 'Directory' });
+    }
+    if (pathname.startsWith(`/api/directoryContent/${ids.project}/branches/${ids.branch}`)) {
+      return json({
+        name: 'sources',
+        _files: this.hasSources ? ['main.js'] : [],
+        _directories: [],
+        _hasContent: this.hasSources,
+      });
+    }
+    if (pathname.startsWith(`/api/fileContent/${ids.project}/branches/${ids.branch}/`)) {
+      return new Response('first line\nsecond line\nthird line', { headers: { 'Content-Type': 'text/plain' } });
+    }
+    if (pathname === `/api/branches/${ids.branch}/scanResults/last`) {
+      return json([...this.scans.values()].at(-1));
     }
     if (pathname === `/api/branches/${ids.branch}/scanResults`) {
       return json([...this.scans.values()]);
@@ -259,7 +286,7 @@ export class AieFixture {
         return json(this.scans.get(scan[1]) ?? {}, this.scans.has(scan[1]) ? 200 : 404);
       }
       if (scan[2] === 'issues') {
-        return json([this.issue]);
+        return json(this.issues ?? [this.issue]);
       }
       if (scan[2] === 'errors') {
         return json([{ level: 'Warning', message: 'synthetic diagnostic', isCritical: false }]);
@@ -269,14 +296,31 @@ export class AieFixture {
       return json(this.issue);
     }
     if (pathname === `/api/projects/${ids.project}/issues/${ids.issue}/state`) {
+      if (this.issue.approvalState === object.state) {
+        return empty();
+      }
       this.issue.approvalState = object.state;
       this.comment = String(object.comment);
       return empty();
     }
+    if (pathname === `/api/projects/${ids.project}/issues/${ids.issue}/comment`) {
+      this.comment = String(object.comment);
+      return empty();
+    }
+    const resource = new RegExp(`^/api/projects/${ids.project}/issues/([^/]+)/resources$`).exec(pathname);
+    if (resource) {
+      const issue = (this.issues ?? [this.issue]).find((item) => item.id === resource[1]);
+      return json([
+        {
+          identity: issue?.type,
+          title: this.titles.get(String(issue?.id)) ?? this.titles.get(String(issue?.type)) ?? issue?.type ?? 'fixture',
+        },
+      ]);
+    }
     if (pathname === `/api/history/branches/${ids.branch}`) {
       return json([
         {
-          id: 1,
+          id: this.comment ? 2 : 1,
           relatedEntityId: ids.issue,
           changeObjectType: 'IssueApprovalState',
           changedDateTime: '2026-11-10T12:00:00Z',
@@ -371,17 +415,22 @@ export class AieFixture {
         }
       }
       this.sourceDate = new Date(Date.parse(this.sourceDate) + 1000).toISOString();
+      this.hasSources = true;
       return pathname.endsWith('/archive') ? json({ projectId: ids.project, branchId: ids.branch }) : empty();
     }
     if (pathname === '/api/scanQueue/items' && method === 'POST') {
-      if (this.queueMode !== 'queued') {
+      {
         this.queueScanId = this.nextId();
         this.scans.set(this.queueScanId, {
           id: this.queueScanId,
           projectId: ids.project,
           branchId: ids.branch,
           settingsId: ids.settings,
-          progress: { stage: 'Scan', value: 15 },
+          progress: { stage: this.queueMode === 'queued' ? 'Enqueued' : 'Scan', value: 15 },
+          scanLabel: object.scanLabel,
+          initiator: { id: ids.user },
+          queueDate: new Date().toISOString(),
+          scanDate: new Date().toISOString(),
           hasErrors: true,
           scanType: object.scope,
         });

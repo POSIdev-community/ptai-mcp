@@ -25,7 +25,7 @@ async function fixture() {
   const exporter = new Capture();
   const telemetry = createTelemetry({ env: {}, config: { enabled: true, environment: 'test' }, exporter });
   telemetry.invocation('aie_list_projects', result({ items: [] }), 12, {}, '6.4.0.7986');
-  telemetry.action('aie_create_project', 'applied', '6.4.0.7986');
+  telemetry.action('aie_create', 'applied', '6.4.0.7986');
   await telemetry.close();
   return exporter.metrics[0];
 }
@@ -84,7 +84,7 @@ describe('AIE telemetry payload and opt-out', () => {
     expect(
       invocationAttributes('aie_list_projects', result({ error: { code: 'AIE_LOGIN_REQUIRED' } }, true), {}).error_code,
     ).toBe('AIE_LOGIN_REQUIRED');
-    expect(invocationAttributes('aie_get_scan_status', result({ state: 'failed' }), {}).outcome).toBe('success');
+    expect(invocationAttributes('aie_get_operation', result({ state: 'failed' }), {}).outcome).toBe('success');
   });
   it('records numeric duration and counters with an explicit resource attribute set', async () => {
     const metrics = await fixture();

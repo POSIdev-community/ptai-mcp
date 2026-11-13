@@ -56,6 +56,8 @@ const apiGroups = new Set([
   'Agents',
   'ScanQueue',
   'ChangeHistory',
+  'FileContent',
+  'DirectoryContent',
 ]);
 const apiDir = path.join(output, 'src', 'apis');
 for (const entry of fs.readdirSync(apiDir)) {

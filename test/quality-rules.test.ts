@@ -1,10 +1,12 @@
+import { fileURLToPath } from 'node:url';
 import { ESLint } from 'eslint';
 import * as prettier from 'prettier';
 import { describe, expect, it } from 'vitest';
 
-function createLinter(fix = false, typed = false) {
+function createLinter(fix = false, typed = false, cwd?: string) {
   return new ESLint({
     fix,
+    cwd,
     overrideConfig: {
       languageOptions: { parserOptions: { projectService: typed } },
       rules: {
@@ -75,12 +77,67 @@ describe('repository readability rules', () => {
   it('keeps handler implementations independent of the registry assembly', async () => {
     const file = 'src/aie/mcp/handlers/findings.ts';
     const registry = await messages("import { invokeHandler } from '../handlers.js';\nexport { invokeHandler };", file);
-    expect(registry.some((message) => message.ruleId === 'no-restricted-imports')).toBe(true);
+    expect(registry.some((message) => message.ruleId === 'project/restricted-module-imports')).toBe(true);
     const contract = await messages(
       "import type { ToolHandlers } from '../handler-contract.js';\nexport type Handlers = ToolHandlers;",
       file,
     );
-    expect(contract.some((message) => message.ruleId === 'no-restricted-imports')).toBe(false);
+    expect(contract.some((message) => message.ruleId === 'project/restricted-module-imports')).toBe(false);
+  });
+  it.each([
+    "import { invokeHandler } from '.././handlers.js';",
+    "export { invokeHandler } from '../handlers.ts';",
+    "export * from '.././handlers.js';",
+    "export const load = () => import('../handlers.js');",
+    'export const load = () => import(`../handlers.js`);',
+    "export const registry = require('.././handlers.js');",
+    'export const registry = require(`.././handlers.js`);',
+  ])('checks normalized registry paths in every static module reference: %s', async (code) => {
+    const result = await messages(code, 'src/aie/mcp/handlers/findings.ts');
+    expect(result.find((message) => message.ruleId === 'project/restricted-module-imports')).toMatchObject({
+      severity: 2,
+    });
+  });
+  it('keeps the registry boundary when ESLint starts in a subdirectory', async () => {
+    const [result] = await createLinter(false, false, fileURLToPath(new URL('../src', import.meta.url))).lintText(
+      "export * from '../handlers.js';",
+      { filePath: fileURLToPath(new URL('../src/aie/mcp/handlers/findings.ts', import.meta.url)) },
+    );
+    expect(result.messages.some((message) => message.ruleId === 'project/restricted-module-imports')).toBe(true);
+  });
+  it('does not mistake a local function named require for a module import', async () => {
+    const result = await messages(
+      "export function echo(require: (name: string) => string) { return require('../handlers.js'); }",
+      'src/aie/mcp/handlers/findings.ts',
+    );
+    expect(result.some((message) => message.ruleId === 'project/restricted-module-imports')).toBe(false);
+  });
+  it('limits the aggregate size of an object whose inline handlers individually fit the function limit', async () => {
+    const body = Array.from({ length: 26 }, (_, index) => `trace(${index});`).join('\n');
+    const code = `export const handlers = {\nfirst: () => {\n${body}\n},\nsecond: function () {\n${body}\n}\n};`;
+    const result = await messages(code);
+    expect(result.some((message) => message.ruleId === 'max-lines-per-function')).toBe(false);
+    expect(result.find((message) => message.ruleId === 'project/object-function-size')).toMatchObject({ severity: 2 });
+  });
+  it.each([47, 48])('enforces the 50-code-line object boundary with %i data fields', async (fields) => {
+    const data = Array.from({ length: fields }, (_, index) => `value${index}: ${index},`).join('\n');
+    const result = await messages(`export const handlers = {\nrun: () => true,\n${data}\n};`);
+    expect(result.some((message) => message.ruleId === 'project/object-function-size')).toBe(fields === 48);
+  });
+  it('allows large data objects without inline behavior', async () => {
+    const data = Array.from({ length: 80 }, (_, index) => `value${index}: ${index},`).join('\n');
+    const result = await messages(`export const data = {\n${data}\n};`);
+    expect(result.some((message) => message.ruleId === 'project/object-function-size')).toBe(false);
+  });
+  it('allows dispatch tables that refer to named functions', async () => {
+    const data = Array.from({ length: 60 }, (_, index) => `operation${index}: handle,`).join('\n');
+    const result = await messages(`export const handlers = {\n${data}\n};\nfunction handle() { return {}; }`);
+    expect(result.some((message) => message.ruleId === 'project/object-function-size')).toBe(false);
+  });
+  it('recognizes inline functions wrapped in a TypeScript assertion', async () => {
+    const data = Array.from({ length: 48 }, (_, index) => `value${index}: ${index},`).join('\n');
+    const result = await messages(`export const handlers = {\nrun: (() => true) as Handler,\n${data}\n};`);
+    expect(result.some((message) => message.ruleId === 'project/object-function-size')).toBe(true);
   });
   const groupedImports = [
     "import { createHash } from 'node:crypto';",
@@ -196,14 +253,55 @@ describe('repository readability rules', () => {
   });
   it.each(['Map', 'Set', 'WeakMap', 'WeakSet'])('rejects an exported module-level mutable %s', async (collection) => {
     const result = await messages(`export const sharedState = new ${collection}();`);
-    expect(result.map((message) => message.ruleId)).toContain('no-restricted-syntax');
+    expect(result.map((message) => message.ruleId)).toContain('project/no-exported-mutable-collections');
   });
 
   it('allows a private collection behind an operation', async () => {
     const result = await messages(
       'const values = new Set<string>();\nexport function includes(value: string) { return values.has(value); }',
     );
-    expect(result.some((message) => message.ruleId === 'no-restricted-syntax')).toBe(false);
+    expect(result.some((message) => message.ruleId === 'project/no-exported-mutable-collections')).toBe(false);
+  });
+  it.each([
+    'const state = new Map();\nexport { state };',
+    'const state = new Set();\nconst alias = state;\nexport default alias;',
+    'export const state = new Map() as ReadonlyMap<string, string>;',
+    'export const state: ReadonlySet<string> = new Set();',
+    'export default new WeakMap();',
+    'export const state = Object.freeze(new Map());',
+  ])('rejects exported shared collections through aliases and readonly wrappers: %s', async (code) => {
+    const result = await messages(code);
+    expect(result.find((message) => message.ruleId === 'project/no-exported-mutable-collections')).toMatchObject({
+      severity: 2,
+    });
+  });
+  it.each([
+    'export class Store {\nprivate values = new Map();\n}',
+    'export function createStore() { return new Map(); }',
+    'class Map {}\nexport const state = new Map();',
+    'const state = new Map();\nexport type { state };',
+    'const state = new Map();\nexport { type state };',
+  ])('allows instance state, factories and constructors that shadow builtins: %s', async (code) => {
+    const result = await messages(code);
+    expect(result.some((message) => message.ruleId === 'project/no-exported-mutable-collections')).toBe(false);
+  });
+  it('blocks a third nested callback while allowing two and named references', async () => {
+    const nested = await messages('export const run = () => items.map(x => x.filter(y => y.some(z => z)));');
+    expect(nested.find((message) => message.ruleId === 'max-nested-callbacks')).toMatchObject({ severity: 2 });
+    const allowed = await messages('export const run = () => items.map(x => x.filter(Boolean));');
+    expect(allowed.some((message) => message.ruleId === 'max-nested-callbacks')).toBe(false);
+  });
+  it('reports branching complexity above 15 as advice even when the function is short', async () => {
+    const conditions = Array.from({ length: 16 }, (_, index) => `value === ${index}`).join(' || ');
+    const result = await messages(`export function check(value: number) { return ${conditions}; }`);
+    expect(result.find((message) => message.ruleId === 'complexity')).toMatchObject({ severity: 1 });
+    expect(result.some((message) => message.ruleId === 'max-lines-per-function')).toBe(false);
+  });
+  it('does not allow inline directives to suppress required lint checks', async () => {
+    const result = await messages(
+      '/* eslint-disable curly */\nexport function check(ok: boolean) { if (ok) return true; }',
+    );
+    expect(result.find((message) => message.ruleId === 'curly')).toMatchObject({ severity: 2 });
   });
   it('autofixes import ordering without group gaps and keeps the gap before module declarations', async () => {
     const code = [

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { getDownloadSecurityOptions } from '../utils/downloadSecurity.js';
 import { logger as log } from '../utils/logger.js';
-import { getBundleDir, getProxyPath, readVersionsJson } from '../utils/paths.js';
+import { getBundleDir, getExpectedBundleVersion, getProxyPath, readVersionsJson } from '../utils/paths.js';
 import { Platform } from '../utils/platform-constants.js';
 import { killAnalyzerProcesses } from '../utils/processes.js';
 import { INSTALLER_PRODUCT_ID } from './bundle-constants.js';
@@ -56,6 +56,10 @@ export async function runBundleOperation({ version, successMessage }: BundleOper
     progress.close();
     process.removeListener('SIGINT', onSigint);
   }
+}
+
+export function isCurrentBundleInstalled(version = getExpectedBundleVersion()): boolean {
+  return !!version && fs.existsSync(getProxyPath()) && readVersionsJson()?.[INSTALLER_PRODUCT_ID] === version;
 }
 
 function formatStopResult(result: Awaited<ReturnType<typeof killAnalyzerProcesses>>): string {

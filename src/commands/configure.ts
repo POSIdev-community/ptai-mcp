@@ -4,13 +4,18 @@ import { configureHooks, isHooksConfigured, removeHooks } from '../agents/hooksC
 import { configureMcp, isMcpConfigured, removeMcp } from '../agents/mcpConfig.js';
 import { type AgentDefinition } from '../agents/models.js';
 import { getSupportedAgents, isAgentDetected } from '../agents/registry.js';
+import { isCurrentBundleInstalled } from '../services/bundle.js';
 import { logger as log } from '../utils/logger.js';
 import { getProxyPath } from '../utils/paths.js';
 
 export const BACK_TO_MCP_SELECTION = '__back_to_mcp_selection__';
 const CONFIGURE_HOOKS = '__configure_hooks__';
 
-export async function configureCommand(): Promise<void> {
+export interface ConfigureOptions {
+  localHooks?: boolean;
+}
+
+export async function configureCommand(options: ConfigureOptions = {}): Promise<void> {
   const supportedAgents = getSupportedAgents();
 
   if (supportedAgents.length === 0) {
@@ -18,6 +23,7 @@ export async function configureCommand(): Promise<void> {
   }
 
   const agents = supportedAgents.filter(isAgentDetected);
+  const localHooks = options.localHooks ?? isCurrentBundleInstalled();
 
   while (true) {
     const initiallyConfiguredMcp = await getInitiallyConfiguredMcp(agents);
@@ -32,7 +38,7 @@ export async function configureCommand(): Promise<void> {
     const selectedMcp = new Set(mcpSelection as string[]);
     const selectedDetectedAgents = agents.filter((agent) => selectedMcp.has(agent.id));
 
-    const hookSelection = await selectHooksForAgents(selectedDetectedAgents);
+    const hookSelection = localHooks ? await selectHooksForAgents(selectedDetectedAgents) : [];
 
     if (hookSelection === BACK_TO_MCP_SELECTION) {
       continue;
@@ -42,7 +48,7 @@ export async function configureCommand(): Promise<void> {
       return;
     }
 
-    await applyConfiguration(agents, selectedMcp, hookSelection);
+    await applyConfiguration(agents, selectedMcp, localHooks ? hookSelection : undefined);
 
     log.success('Agent configuration completed.');
 
@@ -259,12 +265,26 @@ async function selectHooksForAgents(
 async function applyConfiguration(
   agents: AgentDefinition[],
   selectedMcp: Set<string>,
-  hookSelection: readonly string[],
+  hookSelection: readonly string[] | undefined,
 ): Promise<void> {
   for (const agent of agents) {
     await configureAgentMcp(agent, selectedMcp.has(agent.id));
   }
 
+  if (hookSelection) {
+    await applyHooksConfiguration(agents, selectedMcp, hookSelection);
+  }
+
+  if (selectedMcp.has(CUSTOM_AGENT_ID)) {
+    await offerCustomAgentGuide();
+  }
+}
+
+async function applyHooksConfiguration(
+  agents: AgentDefinition[],
+  selectedMcp: Set<string>,
+  hookSelection: readonly string[],
+) {
   const selectedHooks = new Set(hookSelection);
   const proxyPath = getProxyPath();
 
@@ -275,9 +295,5 @@ async function applyConfiguration(
     } else {
       await removeHooksIfPresent(agent);
     }
-  }
-
-  if (selectedMcp.has(CUSTOM_AGENT_ID)) {
-    await offerCustomAgentGuide();
   }
 }

@@ -35,6 +35,14 @@ export function archiveEntryPath(name: string): string {
   return parts.join('/');
 }
 
+export function updateArchiveCrc(crc: number, bytes: Buffer): number {
+  for (const byte of bytes) {
+    crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
+  }
+
+  return crc;
+}
+
 export async function downloadArchive(response: Response, requestedDestination: string, signal: AbortSignal) {
   const destination = path.resolve(requestedDestination);
   const parent = await fsp.realpath(path.dirname(destination));
@@ -195,7 +203,7 @@ function isUnsafeArchiveSegment(value: string): boolean {
     !value ||
     value === '.' ||
     value === '..' ||
-    // eslint-disable-next-line no-control-regex -- ZIP names must reject control characters.
+    // ZIP names must reject control characters; the reviewed lint exception lives in eslint.config.js.
     /[<>:"|?*\x00-\x1f]/.test(value) ||
     /[. ]$/.test(value) ||
     /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(value)
@@ -232,9 +240,7 @@ async function extractFile(
         return callback(new ToolError(ErrorCode.ArchiveLimit, 'ZIP extraction exceeds the total byte limit.'));
       }
 
-      for (const byte of chunk) {
-        crc = crcTable[(crc ^ byte) & 0xff] ^ (crc >>> 8);
-      }
+      crc = updateArchiveCrc(crc, chunk);
 
       callback(null, chunk);
     },

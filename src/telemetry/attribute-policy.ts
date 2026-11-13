@@ -10,14 +10,14 @@ import { Outcome, TelemetryAction } from './constants.js';
 const tools: ReadonlySet<string> = new Set<AieToolName>(Object.values(AieToolName));
 const actions: ReadonlySet<string> = new Set<RecordedAction>([
   ...Object.values(SessionAction),
-  AieToolName.CreateProject,
+  AieToolName.Create,
   AieToolName.UploadSources,
   AieToolName.DownloadProject,
   AieToolName.StartScan,
   AieToolName.TriageIssue,
   AieToolName.UpdateProjectSettings,
   AieToolName.SavePmCatalogEntry,
-  AieToolName.StopScan,
+  AieToolName.CancelOperation,
   TelemetryAction.ScanTerminal,
 ]);
 

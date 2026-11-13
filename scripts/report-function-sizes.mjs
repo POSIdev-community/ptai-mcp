@@ -31,9 +31,19 @@ const files = results.flatMap((result) =>
       description: message.message,
     })),
 );
+const errors = results.flatMap((result) =>
+  result.messages
+    .filter((message) => message.severity === 2)
+    .map((message) => ({
+      file: path.relative(process.cwd(), result.filePath),
+      line: message.line,
+      rule: message.ruleId,
+      description: message.message,
+    })),
+);
 
 if (process.argv.includes('--json')) {
-  console.log(JSON.stringify({ functions, files }, null, 2));
+  console.log(JSON.stringify({ functions, files, errors }, null, 2));
 } else {
   for (const band of ['optimal', 'normal', 'acceptable', 'oversized']) {
     console.log(`${band}: ${functions.filter((item) => item.band === band).length}`);
@@ -47,7 +57,14 @@ if (process.argv.includes('--json')) {
   for (const item of functions.filter((item) => item.band === 'acceptable' || item.band === 'oversized')) {
     console.log(`${item.file}:${item.line} ${item.description}`);
   }
+  for (const error of errors) {
+    console.error(`${error.file}:${error.line} ${error.rule ?? 'parser'}: ${error.description}`);
+  }
 }
-if (functions.some((item) => item.band === 'oversized') || files.some((item) => item.band === 'oversized')) {
+if (
+  errors.length ||
+  functions.some((item) => item.band === 'oversized') ||
+  files.some((item) => item.band === 'oversized')
+) {
   process.exitCode = 1;
 }

@@ -4,7 +4,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['test/**/*.test.ts'],
-    passWithNoTests: true,
+    passWithNoTests: false,
     // Several platform-specific tests temporarily stub process.platform.
     // Keep files in one worker so those process-global stubs cannot leak
     // across concurrently running test files.

@@ -3,6 +3,7 @@ import { Effects } from '../../shared/effects.js';
 import { ErrorCode } from '../../shared/error-codes.js';
 import { safeError, ToolError } from '../../shared/errors.js';
 import { LIMITS } from '../../shared/limits.js';
+import { AieToolName } from '../tool-names.js';
 import { type JobContext, JobState, WorkflowStage } from './models.js';
 
 export class Operations {
@@ -46,6 +47,28 @@ export class Operations {
     return this.view(this.find(identity, id));
   }
 
+  public remember(identity: string, id: string, ids: Record<string, unknown>): void {
+    Object.assign(this.find(identity, id).known_ids, ids);
+  }
+
+  public async wait(identity: string, id: string, milliseconds: number) {
+    const job = this.find(identity, id);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      await Promise.race([
+        job.task,
+        new Promise((resolve) => {
+          timer = setTimeout(resolve, Math.max(0, milliseconds));
+        }),
+      ]);
+
+      return this.view(job);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   public isBusy(identity: string, target: string) {
     return [...this.jobs.values()].some(
       (job) => job.identity === identity && job.target === target && !job.finished_at,
@@ -54,6 +77,14 @@ export class Operations {
 
   public cancel(identity: string, id: string) {
     const job = this.find(identity, id);
+
+    if (job.operation === AieToolName.StartScan) {
+      job.cancel_requested = true;
+
+      if (job.stage === WorkflowStage.QueueingScan || job.known_ids.queue_id || job.finished_at) {
+        return this.view(job);
+      }
+    }
 
     if (!job.finished_at) {
       job.state = JobState.Cancelling;
@@ -116,11 +147,15 @@ export class Operations {
       stage: job.stage,
       completed_stages: [...job.completed_stages],
       known_ids: { ...job.known_ids },
-      effects: job.effects,
+      effects:
+        !job.finished_at && job.stage === WorkflowStage.QueueingScan && !job.known_ids.queue_id
+          ? Effects.Unknown
+          : job.effects,
       result: job.result,
       error: job.error,
       poll_after_ms: job.finished_at ? null : LIMITS.pollMs,
       persistence: 'current_process_only',
+      cancel_requested: job.cancel_requested ?? false,
     };
   }
 
@@ -155,6 +190,10 @@ export class Operations {
         Object.assign(job.known_ids, ids);
         job.effects = Effects.Partial;
       },
+      remember: (ids) => {
+        Object.assign(job.known_ids, ids);
+      },
+      cancellationRequested: () => job.cancel_requested === true,
     };
 
     return context;
@@ -226,4 +265,5 @@ interface Job {
   error?: ReturnType<typeof safeError>;
   controller: AbortController;
   task?: Promise<void>;
+  cancel_requested?: boolean;
 }

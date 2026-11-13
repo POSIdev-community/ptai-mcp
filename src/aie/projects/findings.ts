@@ -1,10 +1,11 @@
 import { Effects } from '../../shared/effects.js';
 import { ErrorCode } from '../../shared/error-codes.js';
-import { ToolError } from '../../shared/errors.js';
+import { ToolError, validation } from '../../shared/errors.js';
+import type { ChangeHistoryRowModel } from '../../vendor/aie-v63/src/models/index.js';
 import type { AieApi } from '../api/client.js';
-import type { VulnerabilityModel } from '../api/contracts.js';
-import { checkReadback } from '../api/write-schema.js';
-import { type IssueFilters, SourceMatch } from './models.js';
+import { issueCard, matches, summarizeIssues } from './issue-query.js';
+import { searchIssues } from './issue-search.js';
+import { type IssueFilters, IssueView, SourceMatch } from './models.js';
 
 export class Findings {
 
@@ -34,32 +35,42 @@ export class Findings {
     return scan;
   }
 
-  public async list(projectId: string, scanId: string, filters: IssueFilters, branchId?: string) {
+  public async query(
+    projectId: string,
+    scanId: string,
+    filters: IssueFilters,
+    branchId?: string,
+    view: IssueView = IssueView.Items,
+  ) {
+    if (filters.start_line && filters.end_line && filters.end_line < filters.start_line) {
+      validation('end_line must not precede start_line.');
+    }
+
     await this.scan(projectId, scanId, branchId);
     const issues = await this.api.json(
       this.api.projects.apiProjectsProjectIdScanResultsScanResultIdIssuesGetRaw({ projectId, scanResultId: scanId }),
     );
 
-    return issues
-      .filter((issue) => matches(issue, filters))
-      .map((issue) => ({
-        id: issue.id,
-        counter: issue.counter,
-        type: issue.type,
-        issue_type: issue.issueType,
-        severity: issue.level,
-        approval_state: issue.approvalState,
-        is_new: issue.isNew,
-        scan_module: issue.scanModule,
-        source_file: issue.sourceFile,
-        source_begin_line: issue.sourceBeginLine,
-        source_end_line: issue.sourceEndLine,
-        source_begin_column: issue.sourceBeginColumn,
-        source_end_column: issue.sourceEndColumn,
-        entry_point_file: issue.entryPointFile,
-        entry_point_line: issue.entryPointLine,
-        component: issue.vulnerableComponent ?? issue.vulnerableScaComponent,
-      }));
+    const searched = await searchIssues(
+      this.api,
+      projectId,
+      issues.filter((issue) => matches(issue, filters)),
+      filters.type,
+    );
+
+    return {
+      items: view === IssueView.Summary ? summarizeIssues(searched.issues) : searched.issues.map(issueCard),
+      metadata: {
+        view,
+        matched_issues: searched.issues.length,
+        search: searched.search,
+        counts_scope: 'all_matching_findings_including_discarded_and_suppressed; unlike AIE vulnerability statistics',
+      },
+    };
+  }
+
+  public async list(projectId: string, scanId: string, filters: IssueFilters, branchId?: string) {
+    return (await this.query(projectId, scanId, filters, branchId)).items;
   }
 
   public async details(projectId: string, scanId: string, issueId: string, branchId?: string) {
@@ -97,7 +108,69 @@ export class Findings {
     const before = await this.details(projectId, scanId, issueId, branchId);
 
     if (!before.branch_id) {
-      throw new ToolError(ErrorCode.InvalidResponse, 'Issue branch is required to confirm its triage comment.');
+      throw new ToolError(ErrorCode.InvalidResponse, 'Issue branch is required for comment readback.');
+    }
+
+    const changed = before.issue.approvalState !== state;
+    const target = { project_id: projectId, scan_id: scanId, issue_id: issueId };
+
+    if (!changed && !comment) {
+      return { ...target, state, verified: true, no_op: true, effects: Effects.NotApplied };
+    }
+
+    const prior = comment ? await this.commentHistory(before.branch_id, issueId).catch(() => null) : null;
+    await this.writeTriage(projectId, issueId, state, comment, changed);
+
+    try {
+      const saved = await this.details(projectId, scanId, issueId, before.branch_id);
+      this.assertTriage(saved.issue.approvalState === state, 'state', target);
+
+      if (comment) {
+        await this.verifyComment(before.branch_id, issueId, comment, prior, target);
+      }
+
+      return {
+        ...target,
+        state,
+        comment,
+        verified: true,
+        effects: Effects.Applied,
+        comment_readback: comment ? 'branch_history' : 'not_requested',
+        verification_scope: 'selected_issue_only',
+        synchronization: 'AIE asynchronously synchronizes matching hashes to other branches; not verified here',
+      };
+    } catch (error) {
+      if (
+        error instanceof ToolError &&
+        (error.code === ErrorCode.ReadbackMismatch || error.code === ErrorCode.ReadbackUnavailable)
+      ) {
+        throw error;
+      }
+
+      throw new ToolError(ErrorCode.ReadbackUnavailable, 'Triage accepted; state/comment readback unavailable.', {
+        effects: Effects.Applied,
+        target,
+      });
+    }
+  }
+
+  private async writeTriage(
+    projectId: string,
+    issueId: string,
+    state: 'Approval' | 'Discard' | 'None',
+    comment: string,
+    changed: boolean,
+  ) {
+    if (!changed) {
+      await this.api.empty(
+        this.api.projects.apiProjectsProjectIdIssuesIssueIdCommentPutRaw({
+          projectId,
+          issueId,
+          changeIssueCommentModel: { comment },
+        }),
+      );
+
+      return;
     }
 
     await this.api.empty(
@@ -107,63 +180,51 @@ export class Findings {
         changeIssueApprovalStateModel: { state, comment },
       }),
     );
-
-    try {
-      const saved = await this.details(projectId, scanId, issueId, before.branch_id);
-      checkReadback({ state: saved.issue.approvalState }, { state });
-      await this.verifyTriageComment(before.branch_id, issueId, comment);
-
-      return {
-        project_id: projectId,
-        scan_id: scanId,
-        issue_id: issueId,
-        state,
-        comment,
-        verified: true,
-        effects: Effects.Applied,
-        comment_readback: 'branch_history',
-      };
-    } catch (error) {
-      if (error instanceof ToolError && error.code === ErrorCode.ReadbackMismatch) {
-        throw error;
-      }
-
-      throw new ToolError(
-        ErrorCode.ReadbackUnavailable,
-        'Triage was accepted but state/comment readback could not be completed.',
-        { effects: Effects.Applied, target: { project_id: projectId, scan_id: scanId, issue_id: issueId } },
-      );
-    }
   }
 
-  private async verifyTriageComment(branchId: string, issueId: string, comment: string): Promise<void> {
-    const history = await this.api.json(
-      this.api.history.apiHistoryBranchesBranchIdGetRaw({ branchId: branchId, entityId: issueId }),
+  private async verifyComment(
+    branchId: string,
+    issueId: string,
+    comment: string,
+    prior: ChangeHistoryRowModel[] | null,
+    target: Record<string, string>,
+  ) {
+    if (prior === null) {
+      throw new ToolError(ErrorCode.ReadbackUnavailable, 'Comment comparison baseline is unavailable.', {
+        effects: Effects.Applied,
+        target,
+        failed_check: 'comment',
+      });
+    }
+
+    const rows = await this.commentHistory(branchId, issueId);
+    const fresh = rows.some(
+      (row) => row.comment === comment && !prior.some((old) => JSON.stringify(old) === JSON.stringify(row)),
     );
 
-    const newest = history
-      .filter(
-        (row) =>
-          row.relatedEntityId === issueId && ['IssueApprovalState', 'Comment'].includes(row.changeObjectType ?? ''),
-      )
-      .sort(
-        (a, b) => String(b.changedDateTime).localeCompare(String(a.changedDateTime)) || Number(b.id) - Number(a.id),
-      )[0];
+    this.assertTriage(fresh, 'comment', target);
+  }
 
-    checkReadback({ comment: newest?.comment }, { comment });
+  private async commentHistory(branchId: string, issueId: string) {
+    const rows = await this.api.json(
+      this.api.history.apiHistoryBranchesBranchIdGetRaw({ branchId, entityId: issueId }),
+    );
+
+    return rows.filter(
+      (row) =>
+        row.relatedEntityId === issueId && ['IssueApprovalState', 'Comment'].includes(row.changeObjectType ?? ''),
+    );
+  }
+
+  private assertTriage(verified: boolean, failed_check: string, target: Record<string, string>) {
+    if (!verified) {
+      throw new ToolError(ErrorCode.ReadbackMismatch, 'Triage readback did not confirm the requested field.', {
+        effects: Effects.Applied,
+        target,
+        failed_check,
+      });
+    }
   }
 }
 
-export function matches(issue: VulnerabilityModel, filters: IssueFilters) {
-  return (
-    (!filters.severity?.length || filters.severity.includes(issue.level ?? '')) &&
-    (!filters.approval_state?.length || filters.approval_state.includes(issue.approvalState ?? '')) &&
-    (!filters.issue_type?.length || filters.issue_type.includes(issue.issueType ?? '')) &&
-    (filters.is_new === undefined || issue.isNew === filters.is_new) &&
-    (filters.counter === undefined || issue.counter === filters.counter) &&
-    (!filters.path ||
-      [issue.sourceFile, issue.entryPointFile].some((file) =>
-        file?.replace(/\\/g, '/').toLowerCase().includes(filters.path!.replace(/\\/g, '/').toLowerCase()),
-      ))
-  );
-}
+export { matches } from './issue-query.js';

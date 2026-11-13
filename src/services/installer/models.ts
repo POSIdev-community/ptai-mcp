@@ -24,6 +24,13 @@ export interface DownloadOptions {
   insecureRequest?: RequestFunction;
 }
 
+export type DownloadSecurityOptions = Pick<
+  DownloadOptions,
+  'allowInsecureTls' | 'confirmInsecureTls' | 'insecureRequest'
+>;
+
+export type DownloadTlsOptions = Pick<DownloadSecurityOptions, 'allowInsecureTls' | 'confirmInsecureTls'>;
+
 export type RequestFunction = typeof fetch;
 
 export type BundleRunner = (

@@ -12,6 +12,7 @@ import { type ConnectedSession } from '../auth/models.js';
 import { Sessions } from '../auth/session.js';
 import { PmCatalog } from '../pm/catalog.js';
 import { Findings } from '../projects/findings.js';
+import { beforeDeadline } from '../runtime/deadline.js';
 import { JobState } from '../runtime/models.js';
 import { Operations } from '../runtime/operations.js';
 import { Pages } from '../runtime/pagination.js';
@@ -31,7 +32,7 @@ const synchronousActions = new Set<string>([
   AieToolName.TriageIssue,
   AieToolName.UpdateProjectSettings,
   AieToolName.SavePmCatalogEntry,
-  AieToolName.StopScan,
+  AieToolName.CancelOperation,
 ]);
 
 export class AieDispatcher {
@@ -99,7 +100,12 @@ export class AieDispatcher {
       return this.sessions.context(call.args.login_id);
     }
 
-    const session = await this.sessions.require();
+    const deadline = Date.now() + LIMITS.scanStartMs;
+    const local =
+      (call.name === AieToolName.GetOperation || call.name === AieToolName.CancelOperation) && !!call.args.operation_id;
+
+    const pending = local ? this.sessions.local() : this.sessions.require();
+    const session = call.name === AieToolName.StartScan ? await beforeDeadline(pending, deadline) : await pending;
     const target = targetFor(call);
     const changing = !definitions.get(call.name)?.annotations?.readOnlyHint;
     const key = session.identity + ':' + target;
@@ -115,7 +121,7 @@ export class AieDispatcher {
     }
 
     try {
-      return await invokeHandler(call, this.context(session, target));
+      return await invokeHandler(call, this.context(session, target, deadline));
     } finally {
       if (changing) {
         this.busy.delete(key);
@@ -123,7 +129,7 @@ export class AieDispatcher {
     }
   }
 
-  private context(session: ConnectedSession, target: string): ToolContext {
+  private context(session: ConnectedSession, target: string, deadline: number): ToolContext {
     return {
       session,
       operations: this.operations,
@@ -133,6 +139,9 @@ export class AieDispatcher {
       pm: new PmCatalog(session.api),
       scans: new Scans(session.api, this.runs),
       sources: new Sources(session.api),
+      runs: this.runs,
+      deadline,
+      requireRemote: () => this.sessions.require(),
       list: (name, query, page, load) => this.pages.list(session.identity, name, query, page, load),
       startOperation: (name, run) =>
         this.operations.start(session.identity, name, target, async (job) => {
@@ -169,6 +178,10 @@ export class AieDispatcher {
   }
 
   private recordSynchronousAction(name: AieToolName, value: JsonObject): void {
+    if (name === AieToolName.CancelOperation && !value.stop_requested) {
+      return;
+    }
+
     if (!synchronousActions.has(name) || value.effects !== Effects.Applied) {
       return;
     }
@@ -191,11 +204,9 @@ function targetFor(call: ConnectedToolCall): string {
 
   switch (call.name) {
     case AieToolName.CancelOperation:
-      return 'operation:' + call.args.operation_id;
+      return 'operation:' + (call.args.operation_id ?? call.args.scan_id);
     case AieToolName.DownloadProject:
       return 'download:' + call.args.destination;
-    case AieToolName.StopScan:
-      return 'scan:' + call.args.project_id + ':' + String(call.args.scan_id ?? call.args.queue_id);
   }
 
   if ('project_id' in args) {

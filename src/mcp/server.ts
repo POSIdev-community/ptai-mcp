@@ -14,6 +14,7 @@ import { AieDispatcher } from '../aie/mcp/dispatcher.js';
 import { localCatalog } from '../local/catalog.js';
 import { LocalRuntime } from '../local/runtime.js';
 import { safeError } from '../shared/errors.js';
+import { buildIdentity } from '../utils/buildIdentity.js';
 import { getPackageVersion } from '../utils/packageMetadata.js';
 import { MCP_SERVER_NAME } from './constants.js';
 import { result } from './result.js';
@@ -63,6 +64,8 @@ export function createMcpServer(aie = new AieDispatcher(), local = new LocalRunt
 }
 
 export async function startMcpServer(args: string[] = []) {
+  const build = buildIdentity();
+  console.error(`MCP version: ${build.version}; build: ${build.sha256_prefix}`);
   const runtime = createMcpServer(undefined, new LocalRuntime(args));
   await runtime.aie.sessions.initialize();
   await runtime.server.connect(new StdioServerTransport());

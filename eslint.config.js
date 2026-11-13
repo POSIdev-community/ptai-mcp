@@ -9,7 +9,10 @@ import functionSize from './scripts/eslint/function-size.mjs';
 import memberSpacing from './scripts/eslint/member-spacing.mjs';
 import moduleOrder from './scripts/eslint/module-order.mjs';
 import noDuplicateStrings from './scripts/eslint/no-duplicate-strings.mjs';
+import noExportedMutableCollections from './scripts/eslint/no-exported-mutable-collections.mjs';
 import noMagicProtocolStrings from './scripts/eslint/no-magic-protocol-strings.mjs';
+import objectFunctionSize from './scripts/eslint/object-function-size.mjs';
+import restrictedModuleImports from './scripts/eslint/restricted-module-imports.mjs';
 
 const classLayout = {
   memberTypes: [
@@ -28,6 +31,7 @@ const classLayout = {
 };
 
 export default tseslint.config(
+  { linterOptions: { noInlineConfig: true } },
   {
     ignores: [
       'dist/',
@@ -95,11 +99,6 @@ export default tseslint.config(
           selector: 'Program > :not(ImportDeclaration) ~ ImportDeclaration',
           message: 'Place imports at the beginning of the module, before declarations and exports.',
         },
-        {
-          selector:
-            'ExportNamedDeclaration > VariableDeclaration > VariableDeclarator > NewExpression[callee.name=/^(Map|Set|WeakMap|WeakSet)$/]',
-          message: 'Keep module-level mutable collections private; expose operations or a snapshot instead.',
-        },
       ],
       'padding-line-between-statements': [
         'error',
@@ -136,6 +135,9 @@ export default tseslint.config(
           'member-spacing': memberSpacing,
           'module-order': moduleOrder,
           'function-size': functionSize,
+          'object-function-size': objectFunctionSize,
+          'no-exported-mutable-collections': noExportedMutableCollections,
+          'restricted-module-imports': restrictedModuleImports,
           'constructor-size': constructorSize,
           'file-size': fileSize,
           'file-size-limit': fileSizeLimit,
@@ -150,6 +152,10 @@ export default tseslint.config(
       'project/member-spacing': 'error',
       'project/module-order': 'error',
       'project/function-size': 'warn',
+      'project/object-function-size': 'error',
+      'project/no-exported-mutable-collections': 'error',
+      complexity: ['warn', 15],
+      'max-nested-callbacks': ['error', 2],
       'project/constructor-size': 'error',
       'project/file-size': 'warn',
       'project/file-size-limit': 'error',
@@ -173,17 +179,15 @@ export default tseslint.config(
   {
     files: ['src/aie/mcp/handlers/**/*.ts'],
     rules: {
-      'no-restricted-imports': [
+      'project/restricted-module-imports': [
         'error',
-        {
-          paths: [
-            {
-              name: '../handlers.js',
-              message:
-                'Handler implementations import shared types from handler-contract.js; the registry assembles implementations.',
-            },
-          ],
-        },
+        [
+          {
+            path: fileURLToPath(new URL('./src/aie/mcp/handlers.ts', import.meta.url)),
+            reason:
+              'Handler implementations import shared types from handler-contract.js; the registry assembles implementations.',
+          },
+        ],
       ],
     },
   },
@@ -191,5 +195,10 @@ export default tseslint.config(
     // Snapshot generated from the external analyzer catalog, like src/vendor.
     files: ['src/local/catalog.ts'],
     rules: { 'project/no-magic-protocol-strings': 'off', 'project/no-duplicate-strings': 'off' },
+  },
+  {
+    files: ['src/aie/sources/extract.ts'],
+    // ZIP entry validation deliberately rejects control characters in untrusted names.
+    rules: { 'no-control-regex': 'off' },
   },
 );

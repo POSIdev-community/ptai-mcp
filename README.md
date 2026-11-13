@@ -1,323 +1,95 @@
-# @posidev-community/ptai-mcp
+# PT Application Inspector MCP
 
-PT Application Inspector MCP with local analysis and AIE server tools.
+Use PT Application Inspector from your AI agent: work with AIE projects and
+findings, manage scans, or analyze code locally.
 
-## Publication identities
+## Quick start
 
-The public npm package and the MCP Registry entry intentionally use different
-identifiers:
-
-| Surface                       | Identifier                             |
-| ----------------------------- | -------------------------------------- |
-| npm package                   | `@posidev-community/ptai-mcp`          |
-| Official MCP Registry         | `io.github.POSIdev-community/ptai-mcp` |
-| Local agent configuration key | `ptai_analyzer`                        |
-
-`server.json` is the MCP Registry manifest. It describes how clients discover
-and launch the npm package; it is not read by the launcher at runtime.
-
-## Requirements
-
-- Node.js 18.19.x or newer in the 18.x line, or Node.js 20.6 or newer
-- AIE 6.3.x or 6.4.x for server tools; both use the API 6.3 client
-- The existing local analyzer bundle for local tools and hooks
-
-## Usage
-
-Install the package with npm and start the MCP:
-
-```bash
-npx @posidev-community/ptai-mcp start
-```
-
-`start` launches a Node stdio MCP server without requiring the analyzer bundle.
-The catalog contains 22 `aie_*` tools and 11 local tools, with local resources
-and prompts. AIE tools work independently of the local analyzer. The local proxy
-starts on the first local request; its catalog is checked for compatibility.
-To use local analysis, install the analyzer bundle with:
+With Node.js installed (18.19+ in the 18.x line, or 20.6+), run:
 
 ```bash
 npx @posidev-community/ptai-mcp install
 ```
 
-Installation stops running analyzer processes, downloads the configured bundle,
-and unpacks it into the platform bundle directory. The production endpoint is
-checked first; development builds may be available only from the PT test
-endpoint. Agent configuration can then be managed with `configure`.
+1. Choose whether to install the local analyzer bundle.
+2. Select the agents to configure. Use **Space** to select and **Enter** to confirm.
+3. Restart or reconnect MCP in your agent.
 
-The POC does not require a BE4P update. Installation preserves the existing
-`shared_variables` session file. With legacy BE4P, concurrent token refresh or
-provider shutdown can still require signing in again; Node cannot fully change
-another process's session behavior.
-An MCP client running in a packaged Windows app may redirect AppData to its own
-LocalCache. In that environment, IDE and MCP sessions may not share the same
-physical file; use `aie_get_context` to check the MCP connection and sign in
-through `aie_auth` when needed. Cross-process session pickup requires a native
-integration check in each supported client environment.
+**For AIE server tools, the analyzer bundle is optional.** Choose **No** (the default) at the
+bundle prompt to configure MCP without downloading it. Local analysis and hooks
+require the bundle; hooks setup is offered when the required bundle is available.
 
-## AIE workflow
+Your agent launches the MCP server when it connects. You do not need to run
+`start` separately for a configured agent.
 
-Call `aie_get_context` to inspect readiness, then `aie_auth` with `action=login`
-and an HTTPS `server_url`. Follow the system browser. If callback delivery fails,
-open the returned local `manual_url` and enter the code there. Do not put codes,
-passwords or tokens in tool arguments. `cancel_login` cancels a pending attempt;
-`logout` ends the shared session. Closing MCP preserves the session.
+Supported on Windows, macOS and Linux. Built-in setup supports Cursor, Claude
+Desktop, Claude Code, Windsurf, Kimi Code, Codex, Antigravity, Gemini CLI and
+OpenCode. The menu lists detected agents and can generate a setup guide for
+other MCP clients.
 
-Use project, branch and scan lists to select explicit IDs before reading findings,
-triaging, updating settings or starting a scan. Lists return bounded pages and
-opaque continuation cursors. Settings return write schemas and revisions; include
-the revision when saving to detect stale edits. Long source/scan workflows return
-an `operation_id`; poll `aie_get_operation` for the retained result. Cancellation
-reports completed stages and known IDs, and does not roll back server changes or
-stop a scan automatically. Jobs are held only in the current MCP process.
+## Work with AIE
 
-Create/upload applies the union of `.aiignore` and `.ptaiignore`, always excludes
-`.git`, skips symbolic links and converts an included `.aiproj.json` only inside the
-archive. Downloads require a new destination directory and publish under its
-`sources` child. Branch downloads do not guarantee the exact snapshot of a
-historical scan. Inspect `effects` and known IDs after an interrupted change
-before retrying it. A fast queue transition can leave scan correlation unconfirmed;
-select an explicit scan rather than assuming the latest scan is yours.
+You need AIE **6.3.x or 6.4.x** and an account with access to the relevant projects.
+Ask your agent to connect to your AIE server and complete sign-in in the browser.
+If the callback cannot reach MCP, use the local manual sign-in page it provides.
+Keep passwords, authorization codes and tokens out of the chat.
 
-BlackBox settings expose per-field credential semantics. Omitted/null HTTP and
-Form passwords preserve the value; empty clears it. Empty proxy passwords preserve
-it. Readable RawCookie is retained for adjacent edits. If the server hides a
-RawCookie, replace it explicitly or disable that authentication type before a
-write requiring preservation. Accepted hidden password replacements report
-`verified=false` and `verification.unverified_fields`; inspect these fields before
-claiming exact readback.
+Once connected, you can ask the agent to:
 
-AIE HTTPS always verifies certificates. For corporate certificates, set
-`NODE_EXTRA_CA_CERTS` to a trusted PEM file before starting MCP.
+- Find vulnerabilities, inspect their details and save triage decisions.
+- Review project settings, PM rules and groups.
+- Create a project or branch and upload local sources.
+- Start a scan, check its progress and stop it.
+- Read source files or download sources for investigation.
 
-## Telemetry
+For local analysis, install the optional bundle and enable the tools or hooks
+in your agent. An AIE connection is not required for local analysis.
 
-Release builds send bounded technical metrics using the existing FLUS contract.
-Source code, comments, paths, AIE URLs, setting values and tokens are excluded.
-Set `PTAI_DISABLE_TELEMETRY=true` in the MCP process environment to disable Node
-collection/export and pass the opt-out to the local proxy. Existing IDE plugins
-use their own telemetry configuration. Local builds without release FLUS
-configuration have no sender; see [RELEASING.md](RELEASING.md).
+## Manage your installation
 
-Collection is enabled by default in configured release artifacts. The receiver
-is the release-configured FLUS/GUS HTTPS origin at `/telemetry/v1/push/`;
-`PTAI_FLUS_HOST` supplies that origin during the build. Invocation counts,
-durations in milliseconds and confirmed action counts carry only the tool name,
-outcome, normalized error code, whitelisted action/section/kind and AIE version.
-Resource fields are service name/version, OS, test/production contour, a random
-process-session UUID and an installation pseudonym. The pseudonym is the first
-16 uppercase hex characters of SHA-256 of OS name, host name and available CPU
-count; the host name itself is not sent. It can correlate activity with BE4P on
-the same installation; it is not an anonymous per-call identifier.
-For the existing `ApplicationInspectorPlugins` table, MCP also emits the same
-values as `user_id`, `session_id` and `plugin_version`. Its `service_name` is
-`ptai-mcp` (BE4P uses `BE4P.Telemetry`), and its metric names start with
-`ptai.mcp.aie.`. These fields distinguish MCP rows without overloading the
-BE4P metric names.
+Run commands as `npx @posidev-community/ptai-mcp <command>`:
 
-Example metric attributes (illustrative values):
+| Command     | Purpose                                                      |
+| ----------- | ------------------------------------------------------------ |
+| `install`   | Set up MCP and optionally install the local analyzer.        |
+| `configure` | Change the selected agents and local hooks.                  |
+| `update`    | Install or update the local analyzer bundle.                 |
+| `status`    | Check the bundle and agent configuration.                    |
+| `uninstall` | Remove the analyzer bundle and PTAI integration from agents. |
+| `start`     | Launch the MCP server for a manual MCP client configuration. |
+
+`update` downloads the required bundle without the installation opt-in prompt.
+Run `configure` afterward if you want to enable local hooks.
+
+For manual configuration, certificates, session troubleshooting and AIE workflow
+limits, see the [usage reference](docs/usage.md).
+
+## Privacy and telemetry
+
+Release builds send technical usage telemetry by default, including a pseudonymous
+installation identifier. Source code, comments, file paths, AIE URLs, setting values
+and AIE credentials are excluded.
+
+To opt out, add this environment setting to the MCP launch configuration and
+restart MCP:
 
 ```json
 {
-  "metric": "ptai.mcp.aie.tool.invocations",
-  "value": 1,
-  "attributes": {
-    "tool": "aie_update_project_settings",
-    "outcome": "success",
-    "error_code": "NONE",
-    "section": "scan",
-    "aie_version": "6.4.0.7986"
+  "env": {
+    "PTAI_DISABLE_TELEMETRY": "true"
   }
 }
 ```
 
-The SDK aggregates in memory, exports about once per minute and does not keep a
-disk retry queue. A failed export can lose metrics and does not fail a tool.
-Payloads are bounded to 256 KiB with one export in flight; shutdown flush is
-bounded. Workflow acceptance and completion are different events, and repeated
-polling does not create extra completion events. The intended analytics target is
-the existing `application_inspector_plugins_metrics` pipeline; end-to-end
-ingestion of MCP metrics still requires verification. Actual retention periods
-and access permissions must be confirmed with its owner before release; no
-additional retention policy is established by this package.
+See [telemetry details](docs/telemetry.md) for the collected fields and opt-out scope.
 
-To opt out, put `"env": { "PTAI_DISABLE_TELEMETRY": "true" }` in the MCP launch
-configuration and restart the MCP server. The value is case-insensitive. The
-opt-out creates no Node collector/export queue/exporter and makes no Node
-DNS/HTTP requests to FLUS. It does not disable required AIE API requests.
+## For developers
 
-## Analyzer installation and agent configuration
+See [architecture and local development](docs/architecture.md) for building,
+testing and code conventions, and [RELEASING.md](RELEASING.md) for publication.
 
-If one of the trusted PT installer endpoints presents an untrusted TLS certificate, the CLI asks for
-explicit confirmation before disabling certificate verification for that
-download only. In a trusted, non-interactive development environment the same
-choice can be supplied explicitly with `PTAI_MCP_ALLOW_INSECURE_TLS=1`:
+## License
 
-```bash
-PTAI_MCP_ALLOW_INSECURE_TLS=1 npx @posidev-community/ptai-mcp install
-```
-
-```powershell
-$env:PTAI_MCP_ALLOW_INSECURE_TLS = '1'
-npx @posidev-community/ptai-mcp install
-```
-
-Do not set this variable for untrusted endpoints or routine production use.
-
-Other commands:
-
-```bash
-npx @posidev-community/ptai-mcp configure
-npx @posidev-community/ptai-mcp update
-npx @posidev-community/ptai-mcp status
-npx @posidev-community/ptai-mcp uninstall
-```
-
-`configure` offers separate MCP and hooks selections for Cursor, Claude
-Desktop, Claude Code, Windsurf, Kimi Code, Codex, Antigravity, Gemini CLI, and OpenCode.
-Existing JSON/JSONC/TOML settings, and unrelated hooks are preserved. Agent
-configuration is supported on Windows, macOS, and Linux. Only agents with a
-detected configuration directory are shown. MCP servers are selected first;
-the hooks step then lists only the selected agents that support hooks. Space
-toggles a selection and Enter confirms it. Deselecting an agent removes only
-the PTAI-owned entries from that agent's configuration. An empty selection is
-applied immediately without an additional confirmation prompt.
-
-The same menu can generate a custom-agent setup guide at
-`~/.ptai-mcp/PT_AI_Custom_Agent_Setup.md` and offer to open it. The guide
-contains MCP, hooks, and agent-rules examples for clients without a built-in
-adapter.
-
-Additional arguments after `start` are passed directly to `McpProxy`:
-
-```bash
-npx @posidev-community/ptai-mcp start --stdio
-```
-
-The CLI also checks `versions.json` and warns when the installed bundle
-version differs from the bundle version expected by this package.
-
-## Bundle locations
-
-| Platform | Directory                                       |
-| -------- | ----------------------------------------------- |
-| Windows  | `%LOCALAPPDATA%\Application Inspector Analyzer` |
-| Linux    | `~/application-inspector-analyzer`              |
-| macOS    | `/Library/Application-Inspector-Analyzer`       |
-
-The MCP executable is named `McpProxy.exe` on Windows and `McpProxy` on
-Linux/macOS.
-
-## Running locally
-
-### From the source tree
-
-Install dependencies, build the CLI, and invoke the entry point directly:
-
-```bash
-npm ci
-npm run build
-node ./bin/ptai-mcp.js --help
-```
-
-Install the analyzer bundle before starting:
-
-```bash
-node ./bin/ptai-mcp.js install
-node ./bin/ptai-mcp.js configure
-node ./bin/ptai-mcp.js status
-node ./bin/ptai-mcp.js start
-```
-
-On Windows PowerShell, the equivalent entry point is
-`node .\bin\ptai-mcp.js`.
-
-### From a local npm artifact
-
-Build the publishable archive first:
-
-```bash
-npm run artifact
-```
-
-Use the filename printed by `npm pack` (the current version produces
-`posidev-community-ptai-mcp-1.0.0.tgz`):
-
-```bash
-npm exec --yes --package=./posidev-community-ptai-mcp-1.0.0.tgz -- ptai-mcp --help
-npm exec --yes --package=./posidev-community-ptai-mcp-1.0.0.tgz -- ptai-mcp install
-npm exec --yes --package=./posidev-community-ptai-mcp-1.0.0.tgz -- ptai-mcp configure
-npm exec --yes --package=./posidev-community-ptai-mcp-1.0.0.tgz -- ptai-mcp status
-npm exec --yes --package=./posidev-community-ptai-mcp-1.0.0.tgz -- ptai-mcp start
-```
-
-On Windows PowerShell, use the local path form:
-
-```powershell
-npm exec --yes --package=.\posidev-community-ptai-mcp-1.0.0.tgz -- ptai-mcp --help
-```
-
-Agent configuration generated by `configure` uses the published package name via
-`npx`, so automatic agent startup through that configuration requires the
-package to be available in the npm registry.
-
-## Licensing
-
-The source code of this npm package is licensed under the MIT License; see
-[`LICENSE`](./LICENSE).
-
-The PT Application Inspector analyzer bundle downloaded by `install` and
-`update`, including `McpProxy` and accompanying components, is proprietary
-software and is not covered by the MIT License. Its use is subject to the
-applicable Positive Technologies license agreement. This package does not
-grant additional rights to use, modify, or redistribute that bundle.
-
-## Development
-
-See [Architecture and code quality](./docs/architecture.md) for module boundaries,
-lint rules and the function/file size limits. Run `npm run quality:report`
-to inspect the current distribution.
-
-```bash
-npm install
-npm run build
-```
-
-Run the test suite with:
-
-```bash
-npm test
-```
-
-Run the suite with enforced coverage thresholds and generate the HTML report:
-
-```bash
-npm run test:coverage
-```
-
-Before publishing, run the complete release verification:
-
-```bash
-npm run verify
-```
-
-Build the publishable npm artifact locally:
-
-```bash
-npm run artifact
-```
-
-This runs the complete verification first and creates a `.tgz` package in the
-repository root. The generated archive is a release artifact and is ignored by
-Git.
-
-Validate the packed artifact in a clean temporary npm installation:
-
-```bash
-npm run smoke:artifact
-```
-
-The package version is the single source of truth. `server.json` is synchronized
-from `package.json` during packing and checked by `npm run verify`. The manifest
-also checks that its MCP Registry name matches `package.json.mcpName` and that
-its npm package entry matches the package name and version.
+This npm package is [MIT licensed](LICENSE). The optional PT Application Inspector
+analyzer bundle is proprietary software covered by the applicable Positive
+Technologies license agreement.

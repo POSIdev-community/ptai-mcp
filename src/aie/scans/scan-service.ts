@@ -3,10 +3,11 @@ import { ErrorCode } from '../../shared/error-codes.js';
 import { safeError, ToolError, validation } from '../../shared/errors.js';
 import { LIMITS } from '../../shared/limits.js';
 import type { AieApi } from '../api/client.js';
-import { ApiErrorType, Stage } from '../api/contracts.js';
+import { ApiErrorType, type ScanResultModel, Stage } from '../api/contracts.js';
 import { Findings } from '../projects/findings.js';
 import { type JobContext, WorkflowStage } from '../runtime/models.js';
 import type { Pages } from '../runtime/pagination.js';
+import { sourcesReady } from '../sources/source-reader.js';
 import { AieToolName } from '../tool-names.js';
 import {
   EMPTY_UUID,
@@ -36,18 +37,7 @@ export class Scans {
   }
 
   public async sourcesReady(projectId: string, branchId: string) {
-    await this.findings.branch(projectId, branchId);
-    const branch = await this.api.json(this.api.branches.apiBranchesBranchIdGetRaw({ branchId }));
-    const date = Date.parse(branch.sourcesChangingDate ?? '');
-
-    if (!Number.isFinite(date) || date <= 0) {
-      throw new ToolError(ErrorCode.SourcesNotReady, 'The branch does not have confirmed uploaded sources.', {
-        effects: Effects.NotApplied,
-        next_action: 'Upload sources and verify source readiness before starting analysis.',
-      });
-    }
-
-    return branch;
+    return sourcesReady(this.api, projectId, branchId);
   }
 
   public async start(
@@ -56,15 +46,18 @@ export class Scans {
     scope: 'Full' | 'Incremental',
     label: string | undefined,
     job: JobContext,
+    initiatorId?: string,
   ) {
     job.stage(WorkflowStage.CheckingSources);
-    await this.sourcesReady(projectId, branchId);
+    const readiness = await this.sourcesReady(projectId, branchId);
     job.check();
     const before = await this.api.json(this.api.branches.apiBranchesBranchIdScanResultsGetRaw({ branchId }));
     job.stage(WorkflowStage.QueueingScan);
     const acceptedAt = new Date().toISOString();
+    const scanLabel = label ? `MCP-${label}` : 'MCP';
+    job.remember?.({ project_id: projectId, branch_id: branchId, scan_label: scanLabel });
     const queueId = await this.api.json(
-      this.api.queue.createItemRaw({ createQueueItem: { branchId, scope, scanLabel: label } }, { signal: job.signal }),
+      this.api.queue.createItemRaw({ createQueueItem: { branchId, scope, scanLabel } }),
     );
 
     if (!queueId) {
@@ -74,33 +67,30 @@ export class Scans {
     }
 
     job.applied(WorkflowStage.ScanQueued, { project_id: projectId, branch_id: branchId, queue_id: queueId });
-    this.runs.set(queueId, {
+    this.track(queueId, {
       projectId,
       branchId,
       queueId,
       before: before.flatMap((scan) => (scan.id ? [scan.id] : [])),
       acceptedAt,
+      label: scanLabel,
+      initiatorId,
     });
 
-    if (this.runs.size > LIMITS.maxTrackedRuns) {
-      const oldest = this.runs.keys().next().value;
-
-      if (oldest !== undefined) {
-        this.runs.delete(oldest);
-      }
-    }
+    const status = await this.resolveStart(projectId, branchId, queueId, job);
 
     return {
-      project_id: projectId,
-      branch_id: branchId,
       queue_id: queueId,
       requested_scope: scope,
       actual_scope: 'pending_server_result',
-      label,
+      scan_label: scanLabel,
       accepted_at: acceptedAt,
       effects: Effects.Applied,
       accepted: true,
-      poll_tool: AieToolName.GetScanStatus,
+      source_readiness: readiness.source_readiness,
+      source_directory_verified: readiness.source_directory_verified,
+      poll_tool: AieToolName.GetOperation,
+      ...status,
     };
   }
 
@@ -146,6 +136,7 @@ export class Scans {
 
   public async stop(projectId: string, branchId: string, queueId?: string, scanId?: string) {
     const status = await this.status(projectId, branchId, queueId, scanId);
+    requireExactStop(status);
 
     if (status.scan_id !== null) {
       if (status.terminal) {
@@ -168,7 +159,7 @@ export class Scans {
         stop_requested: true,
         stop_confirmed: false,
         effects: Effects.Applied,
-        next_action: 'Poll this scan with aie_get_scan_status to confirm Aborted.',
+        next_action: 'Poll this scan with aie_get_operation to confirm Aborted.',
       };
     }
 
@@ -196,6 +187,18 @@ export class Scans {
     };
   }
 
+  private track(queueId: string, run: TrackedRun) {
+    this.runs.set(queueId, run);
+
+    if (this.runs.size > LIMITS.maxTrackedRuns) {
+      const oldest = this.runs.keys().next().value;
+
+      if (oldest !== undefined) {
+        this.runs.delete(oldest);
+      }
+    }
+  }
+
   private async readQueue(target: ScanTarget, queueId: string): Promise<ScanStatus> {
     const tracked = this.runs.get(queueId);
 
@@ -204,7 +207,11 @@ export class Scans {
     }
 
     if (tracked?.scanId) {
-      return this.readScan(target, tracked.scanId);
+      return {
+        ...(await this.readScan(target, tracked.scanId)),
+        queue_id: queueId,
+        correlation: tracked.correlation ?? ScanCorrelation.Queue,
+      };
     }
 
     try {
@@ -229,6 +236,7 @@ export class Scans {
     if (queued.scanResultId && queued.scanResultId !== EMPTY_UUID) {
       if (tracked) {
         tracked.scanId = queued.scanResultId;
+        tracked.correlation = ScanCorrelation.Queue;
       }
 
       return {
@@ -251,18 +259,18 @@ export class Scans {
   }
 
   private async unknownQueue(target: ScanTarget, queueId: string, tracked: TrackedRun | undefined, error: ToolError) {
-    const scans = tracked
-      ? await this.api.json(this.api.branches.apiBranchesBranchIdScanResultsGetRaw({ branchId: target.branchId }))
-      : [];
+    const matching = await this.findHistoryCandidates(target.branchId, tracked, error);
 
-    const candidates = scans
-      .filter((scan) => scan.id && !tracked?.before.includes(scan.id))
-      .map((scan) => ({
-        id: scan.id,
-        scan_date: scan.scanDate,
-        stage: scan.progress?.stage,
-        queue_date: scan.queueDate,
-      }));
+    if (tracked?.label && matching.length === 1) {
+      return this.inferScanFromHistory(target, queueId, tracked, matching[0].id);
+    }
+
+    const candidates = matching.map((scan) => ({
+      id: scan.id,
+      scan_date: scan.scanDate,
+      stage: scan.progress?.stage,
+      queue_date: scan.queueDate,
+    }));
 
     // Candidates never establish an exact relationship with a disappearing queue item.
     return {
@@ -277,6 +285,90 @@ export class Scans {
       next_action:
         'Select a confirmed scan ID or inspect the queue. The latest external scan has not been attributed to this start.',
     };
+  }
+
+  private async findHistoryCandidates(
+    branchId: string,
+    tracked: TrackedRun | undefined,
+    error: ToolError,
+  ): Promise<IdentifiedScan[]> {
+    if (!tracked) {
+      return [];
+    }
+
+    const latest = await this.api
+      .json(this.api.branches.apiBranchesBranchIdScanResultsLastGetRaw({ branchId }))
+      .catch(() => undefined);
+
+    if (error.details.server_code === ApiErrorType.EmptyScanResult) {
+      return [];
+    }
+
+    if (latest?.id && tracked.before.includes(latest.id)) {
+      return [];
+    }
+
+    const scans = await this.api.json(this.api.branches.apiBranchesBranchIdScanResultsGetRaw({ branchId }));
+
+    return scans.filter((scan): scan is IdentifiedScan => isHistoryCandidate(scan, tracked));
+  }
+
+  private async inferScanFromHistory(target: ScanTarget, queueId: string, tracked: TrackedRun, scanId: string) {
+    tracked.scanId = scanId;
+    tracked.correlation = ScanCorrelation.History;
+
+    return {
+      ...(await this.readScan(target, scanId)),
+      queue_id: queueId,
+      correlation: ScanCorrelation.History,
+      correlation_note: 'Inferred from new branch history; not an exact queue mapping.',
+    };
+  }
+
+  private async resolveStart(projectId: string, branchId: string, queueId: string, job: JobContext) {
+    try {
+      while (true) {
+        job.check();
+        const status = await this.status(projectId, branchId, queueId);
+
+        if (!status.scan_id) {
+          await new Promise((resolve) => setTimeout(resolve, LIMITS.pollMs));
+          job.check();
+          continue;
+        }
+
+        job.remember?.({ scan_id: status.scan_id, correlation: status.correlation });
+
+        if (job.cancellationRequested?.() && status.correlation === ScanCorrelation.Queue) {
+          return { ...status, ...(await this.stopDeferred(projectId, branchId, queueId)) };
+        }
+
+        if (job.cancellationRequested?.()) {
+          return {
+            ...status,
+            cancellation_pending: true,
+            requires_explicit_scan_id: true,
+            stop_requested: false,
+            stop_confirmed: false,
+            next_action:
+              'Select this scan_id explicitly in aie_cancel_operation; history correlation cannot authorize automatic stop.',
+          };
+        }
+
+        return status;
+      }
+    } catch (error) {
+      return {
+        project_id: projectId,
+        branch_id: branchId,
+        queue_id: queueId,
+        scan_id: null,
+        correlation: ScanCorrelation.Unconfirmed,
+        state: ScanState.Unknown,
+        refresh_error: safeError(error, 'resolve_scan'),
+        next_action: 'Read aie_get_operation; do not repeat enqueue.',
+      };
+    }
   }
 
   private async readScan(target: ScanTarget, scanId: string): Promise<ResolvedScanStatus> {
@@ -300,6 +392,54 @@ export class Scans {
       metadata: scan,
       correlation: ScanCorrelation.ExplicitScan,
     };
+  }
+
+  private async stopDeferred(projectId: string, branchId: string, queueId: string) {
+    try {
+      const stopped = await this.stop(projectId, branchId, queueId);
+
+      return { stop_result: stopped, cancellation_pending: stopped.stop_requested && !stopped.stop_confirmed };
+    } catch (error) {
+      const failure = safeError(error, AieToolName.CancelOperation);
+      const unknown = !(error instanceof ToolError) || error.details.effects === Effects.Unknown;
+
+      return {
+        cancellation_pending: true,
+        stop_result: {
+          stop_requested: unknown ? null : false,
+          stop_confirmed: false,
+          effects: failure.effects ?? Effects.Unknown,
+          error: failure,
+          next_action:
+            'Read this scan with aie_get_operation to establish whether it stopped before retrying cancellation.',
+        },
+      };
+    }
+  }
+}
+
+function isHistoryCandidate(scan: ScanResultModel, tracked: TrackedRun): scan is IdentifiedScan {
+  if (!scan.id || tracked.before.includes(scan.id)) {
+    return false;
+  }
+
+  if (tracked.label && scan.scanLabel !== tracked.label) {
+    return false;
+  }
+
+  return !tracked.initiatorId || !scan.initiator?.id || scan.initiator.id === tracked.initiatorId;
+}
+
+function requireExactStop(status: ScanStatus) {
+  if (status.correlation === ScanCorrelation.History) {
+    throw new ToolError(
+      ErrorCode.ScanCorrelationRequired,
+      'History matching is inferred. Select an explicit scan_id to stop.',
+      {
+        effects: Effects.NotApplied,
+        target: { project_id: status.project_id, branch_id: status.branch_id, scan_id: status.scan_id },
+      },
+    );
   }
 }
 
@@ -329,6 +469,9 @@ function queueBecameUnavailable(error: unknown): error is ToolError {
   return (
     error.code === ErrorCode.NotFound ||
     error.code === ErrorCode.PermissionDenied ||
+    error.details.server_code === ApiErrorType.EmptyScanResult ||
     error.details.server_code === ApiErrorType.QueueItemAlreadyAssignedToAgent
   );
 }
+
+type IdentifiedScan = ScanResultModel & { id: string };

@@ -14,6 +14,7 @@ import { Settings } from '../settings/project-settings.js';
 import { downloadArchive } from './extract.js';
 import { multipartArchive } from './multipart.js';
 import { packSources } from './pack.js';
+import { sourcesReady } from './source-reader.js';
 
 export class Sources {
 
@@ -34,6 +35,18 @@ export class Sources {
 
   public async upload(projectId: string, branchId: string, source: string, job: JobContext) {
     return this.transfer(job, (scoped) => this.uploadWithinDeadline(projectId, branchId, source, scoped));
+  }
+
+  public async createBranch(
+    projectId: string,
+    branchName: string,
+    source: string,
+    description: string | undefined,
+    job: JobContext,
+  ) {
+    return this.transfer(job, (scoped) =>
+      this.createBranchWithinDeadline(projectId, branchName, source, description, scoped),
+    );
   }
 
   public async download(
@@ -99,6 +112,60 @@ export class Sources {
     }
   }
 
+  private async createBranchWithinDeadline(
+    projectId: string,
+    branchName: string,
+    source: string,
+    description: string | undefined,
+    job: JobContext,
+  ) {
+    job.stage(WorkflowStage.PackingSources);
+    const archive = await packSources(source, job.signal);
+
+    try {
+      const defaultBefore = await this.defaultBranch(projectId);
+      job.stage(WorkflowStage.CreatingBranch);
+      const branchId = await this.api.json(
+        this.api.projects.apiProjectsProjectIdBranchesPostRaw(
+          {
+            projectId,
+            branchBaseModel: { name: branchName, description },
+          },
+          { signal: job.signal },
+        ),
+      );
+
+      if (!branchId) {
+        throw new ToolError(ErrorCode.InvalidResponse, 'Branch creation omitted its ID.', { effects: Effects.Unknown });
+      }
+
+      job.applied(WorkflowStage.BranchCreated, { project_id: projectId, branch_id: branchId });
+      job.stage(WorkflowStage.UploadingSources);
+      await this.api.empty(
+        this.api.store.apiStoreProjectIdBranchesBranchIdSourcesPostRaw(
+          { projectId, branchId, archived: true },
+          multipartArchive(archive, 'sources.zip', {}, job.signal),
+        ),
+      );
+      job.applied(WorkflowStage.ArchiveUploaded);
+      const readiness = await sourcesReady(this.api, projectId, branchId, archive.included_files);
+      job.applied(WorkflowStage.SourcesReady);
+
+      return {
+        project_id: projectId,
+        branch_id: branchId,
+        sources_ready: true,
+        effects: Effects.Applied,
+        ...(await this.branchSelection(projectId, defaultBefore)),
+        ...this.summary(archive),
+        source_readiness: readiness.source_readiness,
+        source_directory_verified: readiness.source_directory_verified,
+      };
+    } finally {
+      await archive.cleanup();
+    }
+  }
+
   private async createWithinDeadline(
     source: string,
     name: string,
@@ -136,7 +203,7 @@ export class Sources {
       }
 
       job.stage(WorkflowStage.VerifyingSources);
-      await this.ready(projectId, branchId);
+      const readiness = await sourcesReady(this.api, projectId, branchId, archive.included_files);
       job.applied(WorkflowStage.SourcesReady);
 
       return {
@@ -146,6 +213,8 @@ export class Sources {
         permanent: true,
         effects: Effects.Applied,
         ...this.summary(archive),
+        source_readiness: readiness.source_readiness,
+        source_directory_verified: readiness.source_directory_verified,
       };
     } finally {
       await archive.cleanup();
@@ -168,7 +237,7 @@ export class Sources {
       );
       job.applied(WorkflowStage.ArchiveUploaded, { project_id: projectId, branch_id: branchId });
       job.stage(WorkflowStage.VerifyingSources);
-      const after = await this.ready(projectId, branchId);
+      const after = await sourcesReady(this.api, projectId, branchId, archive.included_files);
 
       if (before.sourcesChangingDate === after.sourcesChangingDate) {
         throw new ToolError(
@@ -187,6 +256,8 @@ export class Sources {
         sources_changing_date: after.sourcesChangingDate,
         effects: Effects.Applied,
         ...this.summary(archive),
+        source_readiness: after.source_readiness,
+        source_directory_verified: after.source_directory_verified,
       };
     } finally {
       await archive.cleanup();
@@ -250,19 +321,25 @@ export class Sources {
     }
   }
 
-  private async ready(projectId: string, branchId: string) {
-    await new Findings(this.api).branch(projectId, branchId);
-    const branch = await this.api.json(this.api.branches.apiBranchesBranchIdGetRaw({ branchId }));
-
-    if (!branch.sourcesChangingDate || !(Date.parse(branch.sourcesChangingDate) > 0)) {
-      throw new ToolError(
-        ErrorCode.SourceReadinessUnknown,
-        'The source archive request completed but branch readiness could not be confirmed.',
-        { effects: Effects.Applied, target: { project_id: projectId, branch_id: branchId } },
-      );
+  private async defaultBranch(projectId: string): Promise<string | null> {
+    try {
+      return await this.api.json(this.api.projects.apiProjectsProjectIdBranchesWorkingGetRaw({ projectId }));
+    } catch {
+      return null;
     }
+  }
 
-    return branch;
+  private async branchSelection(projectId: string, before: string | null) {
+    const after = await this.defaultBranch(projectId);
+
+    return {
+      working_branch_selection_changed: false,
+      default_branch_before: before,
+      default_branch_after: after,
+      default_branch_changed: before && after ? before !== after : null,
+      default_branch_note:
+        'AIE derives the Plugin default from scan/creation dates; creating or scanning a branch may recompute it without changing user selection.',
+    };
   }
 
   private summary(archive: Awaited<ReturnType<typeof packSources>>) {
@@ -274,7 +351,6 @@ export class Sources {
       included_files: archive.included_files,
       archive_bytes: archive.size,
       aiproj_converted: archive.aiproj_converted,
-      source_readiness: 'archive_endpoint_and_branch_readback',
     };
   }
 }

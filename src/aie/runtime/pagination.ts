@@ -5,6 +5,7 @@ import { LIMITS } from '../../shared/limits.js';
 
 const cursorBytes = 512;
 const maxCursors = 4096;
+export type PageData = { items: unknown[]; metadata?: Record<string, unknown> };
 
 export class Pages {
 
@@ -16,7 +17,7 @@ export class Pages {
     tool: string,
     query: Record<string, unknown>,
     request: PageRequest,
-    load: () => Promise<unknown[]>,
+    load: () => Promise<unknown[] | PageData>,
   ) {
     this.prune();
 
@@ -53,6 +54,7 @@ export class Pages {
     const nextCursor = this.nextCursor(cursor, request, offset + items.length);
 
     return {
+      ...snapshot.metadata,
       items,
       next_cursor: nextCursor,
       total: snapshot.items.length,
@@ -104,9 +106,14 @@ export class Pages {
     return cursor.nextCursor;
   }
 
-  private async loadSnapshot(binding: string, pageSize: number, load: () => Promise<unknown[]>): Promise<Snapshot> {
-    const items = await load();
-    const size = Buffer.byteLength(JSON.stringify(items));
+  private async loadSnapshot(
+    binding: string,
+    pageSize: number,
+    load: () => Promise<unknown[] | PageData>,
+  ): Promise<Snapshot> {
+    const loaded = await load();
+    const { items, metadata = {} } = Array.isArray(loaded) ? { items: loaded } : loaded;
+    const size = Buffer.byteLength(JSON.stringify({ items, metadata }));
 
     if (size > LIMITS.jsonBytes || this.bytes + size > LIMITS.jsonBytes) {
       throw new ToolError(
@@ -122,6 +129,7 @@ export class Pages {
       expires: Date.now() + LIMITS.cursorTtlMs,
       pageSize,
       bytes: size,
+      metadata,
     };
 
     return snapshot;
@@ -129,5 +137,13 @@ export class Pages {
 }
 
 type PageRequest = { cursor?: string; page_size?: number };
-type Snapshot = { binding: string; items: unknown[]; at: string; expires: number; pageSize: number; bytes: number };
+type Snapshot = {
+  binding: string;
+  items: unknown[];
+  metadata: Record<string, unknown>;
+  at: string;
+  expires: number;
+  pageSize: number;
+  bytes: number;
+};
 type Cursor = { snapshot: Snapshot; offset: number; nextCursor?: string };

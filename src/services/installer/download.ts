@@ -8,7 +8,7 @@ import { getBundleExtension, getExpectedBundleVersion } from '../../utils/paths.
 import { INSTALLER_PRODUCT_ID } from '../bundle-constants.js';
 import { INTERMEDIATE_DOMAIN, PRODUCTION_DOMAIN, TEST_DOMAIN } from './constants.js';
 import { getFileSize, writeResponseToFile } from './download-file.js';
-import { type DownloadOptions, type RequestFunction } from './models.js';
+import { type DownloadOptions, type DownloadSecurityOptions, type RequestFunction } from './models.js';
 import { createInsecureRequest, isNetworkConnectivityError, isTlsCertificateError } from './transport.js';
 
 const MAX_ATTEMPTS = 3;
@@ -28,7 +28,7 @@ export async function findInstallerUrl(
   version = getInstallerVersion(),
   signal?: AbortSignal,
   requestFn: RequestFunction = fetch,
-  security: Pick<DownloadOptions, 'allowInsecureTls' | 'confirmInsecureTls' | 'insecureRequest'> = {},
+  security: DownloadSecurityOptions = {},
 ): Promise<string> {
   return (await selectInstallerUrl(version, signal, requestFn, security)).url;
 }
@@ -106,7 +106,7 @@ async function selectInstallerUrl(
   version: string,
   signal: AbortSignal | undefined,
   requestFn: RequestFunction,
-  security: Pick<DownloadOptions, 'allowInsecureTls' | 'confirmInsecureTls' | 'insecureRequest'>,
+  security: DownloadSecurityOptions,
 ): Promise<InstallerSelection> {
   const candidates = [
     getInstallerUrl(version, PRODUCTION_DOMAIN),

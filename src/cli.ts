@@ -16,7 +16,11 @@ const COMMAND_SPECS: readonly CommandSpec[] = [
     action: startCommand,
     allowUnknownOption: true,
   },
-  { name: CommandName.Install, description: 'Download and install the analyzer bundle', action: installCommand },
+  {
+    name: CommandName.Install,
+    description: 'Set up MCP with an optional local analyzer bundle',
+    action: installCommand,
+  },
   {
     name: CommandName.Configure,
     description: 'Configure MCP servers and hooks for supported agents',

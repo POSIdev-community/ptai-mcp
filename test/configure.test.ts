@@ -28,6 +28,7 @@ const agents = [
 ];
 let supportedAgents = agents;
 let detectedAgentIds = new Set(agents.map((agent) => agent.id));
+let bundleReady = true;
 
 vi.mock('@clack/prompts', () => ({
   multiselect,
@@ -43,6 +44,7 @@ vi.mock('../src/agents/registry.js', () => ({
 vi.mock('../src/agents/mcpConfig.js', () => ({ configureMcp, removeMcp, isMcpConfigured }));
 vi.mock('../src/agents/hooksConfig.js', () => ({ configureHooks, removeHooks, isHooksConfigured }));
 vi.mock('../src/utils/paths.js', () => ({ getProxyPath: () => 'proxy.exe' }));
+vi.mock('../src/services/bundle.js', () => ({ isCurrentBundleInstalled: () => bundleReady }));
 const writeCustomAgentGuide = vi.fn(async () => 'C:/home/.ptai-mcp/PT_AI_Custom_Agent_Setup.md');
 const openCustomAgentGuide = vi.fn(async () => undefined);
 vi.mock('../src/agents/customAgent.js', () => ({
@@ -60,6 +62,7 @@ describe('configure command', () => {
     confirm.mockResolvedValue(true);
     supportedAgents = agents;
     detectedAgentIds = new Set(agents.map((agent) => agent.id));
+    bundleReady = true;
     isMcpConfigured.mockImplementation(async (agent: { id: string }) => agent.id === 'alpha');
     isHooksConfigured.mockImplementation(async (agent: { id: string }) => agent.id === 'alpha');
   });
@@ -125,6 +128,31 @@ describe('configure command', () => {
 
     // Assert
     expect(configureMcp).not.toHaveBeenCalled();
+  });
+
+  it('skips local hook selection and preserves existing hooks when bundle installation was declined', async () => {
+    multiselect.mockReset().mockResolvedValueOnce(['alpha']);
+
+    await configureCommand({ localHooks: false });
+
+    expect(multiselect).toHaveBeenCalledOnce();
+    expect(select).not.toHaveBeenCalled();
+    expect(configureMcp).toHaveBeenCalledWith(agents[0], 'alpha.json');
+    expect(configureHooks).not.toHaveBeenCalled();
+    expect(removeHooks).not.toHaveBeenCalled();
+  });
+
+  it('configures MCP without local hook menus when no current bundle is installed', async () => {
+    bundleReady = false;
+    multiselect.mockReset().mockResolvedValueOnce(['alpha']);
+
+    await configureCommand();
+
+    expect(multiselect).toHaveBeenCalledOnce();
+    expect(select).not.toHaveBeenCalled();
+    expect(configureMcp).toHaveBeenCalledWith(agents[0], 'alpha.json');
+    expect(configureHooks).not.toHaveBeenCalled();
+    expect(removeHooks).not.toHaveBeenCalled();
   });
 
   it('reports configuration status', async () => {

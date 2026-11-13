@@ -8,7 +8,8 @@ export const AieToolName = {
   GetIssueDetails: 'aie_get_issue_details',
   TriageIssue: 'aie_triage_issue',
   DownloadProject: 'aie_download_project',
-  CreateProject: 'aie_create_project',
+  GetSources: 'aie_get_sources',
+  Create: 'aie_create',
   UploadSources: 'aie_upload_sources',
   GetProjectSettings: 'aie_get_project_settings',
   UpdateProjectSettings: 'aie_update_project_settings',
@@ -17,8 +18,6 @@ export const AieToolName = {
   SavePmCatalogEntry: 'aie_save_pm_catalog_entry',
   ListScanAgents: 'aie_list_scan_agents',
   StartScan: 'aie_start_scan',
-  GetScanStatus: 'aie_get_scan_status',
-  StopScan: 'aie_stop_scan',
   GetOperation: 'aie_get_operation',
   CancelOperation: 'aie_cancel_operation',
 } as const;

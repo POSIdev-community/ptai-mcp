@@ -413,7 +413,7 @@ describe('selected scan lifecycle and diagnostics', () => {
     const f = await fixture();
     f.server.scans.get(ids.scan)!.progress = { stage: 'Failed', value: 12 };
     for (let index = 0; index < 2; index++) {
-      const response = await f.call('aie_get_scan_status', { ...branch, scan_id: ids.scan });
+      const response = await f.call('aie_get_operation', { ...branch, scan_id: ids.scan });
       expect(response.isError).not.toBe(true);
       expect(response.structuredContent).toMatchObject({ state: 'failed', diagnostics: { available: true, total: 1 } });
     }
@@ -430,7 +430,7 @@ describe('selected scan lifecycle and diagnostics', () => {
     expect(await service.status(ids.project, ids.branch, ids.queue)).toMatchObject({
       state: 'running',
       scan_id: ids.scan,
-      correlation: 'queue_item',
+      correlation: 'queue',
     });
     f.server.scans.get(ids.scan)!.progress = { stage: 'FutureStage', value: 20 };
     expect(await service.status(ids.project, ids.branch, undefined, ids.scan)).toMatchObject({ state: 'unknown' });
@@ -477,18 +477,28 @@ describe('background source workflows and control calls', () => {
     await fs.writeFile(path.join(source, 'main.js'), 'synthetic source');
     for (const [name, args] of [
       [
-        'aie_create_project',
-        { source_directory: source, name: 'fixture', branch_name: 'main', scan_changes: { skipGitIgnoreFiles: true } },
+        'aie_create',
+        {
+          kind: 'project',
+          source_directory: source,
+          name: 'fixture',
+          branch_name: 'main',
+          scan_changes: { skipGitIgnoreFiles: true },
+        },
       ],
       ['aie_upload_sources', { ...branch, source_directory: source }],
       ['aie_download_project', { ...branch, scan_id: ids.scan, destination: path.join(f.root, 'downloaded') }],
-      ['aie_start_scan', { ...branch, scope: 'Incremental', label: 'fixture' }],
+      ['aie_start_scan', { ...branch, scope: 'Incremental', label_suffix: 'fixture' }],
     ] as Array<[string, Record<string, unknown>]>) {
       const response = await f.call(name, args);
       expect(response.isError, name).not.toBe(true);
       const job = await terminal(f.dispatcher, String(response.structuredContent!.operation_id));
       expect(job, name).toMatchObject({ state: 'succeeded', effects: 'applied' });
-      expect((await f.call('aie_get_operation', { operation_id: job.operation_id })).structuredContent).toEqual(job);
+      expect((await f.call('aie_get_operation', { operation_id: job.operation_id })).structuredContent).toMatchObject({
+        state: job.state,
+        result: job.result,
+        known_ids: job.known_ids,
+      });
     }
     expect(await fs.readFile(path.join(f.root, 'downloaded', 'sources', 'main.js'), 'utf8')).toBe('synthetic source');
     expect(vi.mocked(f.telemetry.action).mock.calls.filter((call) => call[0] === 'aie_start_scan')).toHaveLength(1);
@@ -500,7 +510,7 @@ describe('background source workflows and control calls', () => {
     const pending = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const job = f.dispatcher.operations.start(identity, 'aie_create_project', 'create-project', async (context) => {
+    const job = f.dispatcher.operations.start(identity, 'aie_create', 'create-project', async (context) => {
       await pending;
       context.check();
       return {};
@@ -510,22 +520,17 @@ describe('background source workflows and control calls', () => {
     release();
     expect(await terminal(f.dispatcher, job.operation_id)).toMatchObject({ state: 'cancelled' });
   });
-  it('returns unconfirmed queue candidates after a fast assignment and preserves source readiness errors', async () => {
+  it('returns inferred scan IDs after fast assignment and preserves source readiness errors', async () => {
     const f = await fixture();
     f.server.queueMode = 'assigned';
     const started = await f.call('aie_start_scan', branch);
     const job = await terminal(f.dispatcher, String(started.structuredContent!.operation_id));
     expect(job.state).toBe('succeeded');
-    expect((await f.call('aie_get_scan_status', { ...branch, queue_id: ids.queue })).structuredContent).toMatchObject({
-      correlation: 'unconfirmed',
-      scan_id: null,
-      state: 'unknown',
+    expect((await f.call('aie_get_operation', { operation_id: job.operation_id })).structuredContent).toMatchObject({
+      remote: { correlation: 'branch_history', scan_id: f.server.queueScanId, state: 'running' },
     });
     f.server.sourceDate = '0001-01-01T00:00:00Z';
     const refused = await f.call('aie_start_scan', branch);
-    expect(await terminal(f.dispatcher, String(refused.structuredContent!.operation_id))).toMatchObject({
-      state: 'failed',
-      error: { code: 'AIE_SOURCES_NOT_READY' },
-    });
+    expect(refused).toMatchObject({ isError: true, structuredContent: { error: { code: 'AIE_SOURCES_NOT_READY' } } });
   });
 });

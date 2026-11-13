@@ -30,6 +30,22 @@ assembles the concrete implementations and invokes them. Implementations import
 their types from the contract, keeping dependencies directed toward contracts;
 lint rejects imports of the registry assembly from individual handlers.
 
+All seven handler maps are compact dispatch tables: tool names point to named
+functions, including handlers that delegate with one call. Implementations follow
+the table; local argument types and the domain-specific tool-name union follow
+the functions. For example, `findingHandlers` uses
+`Pick<ToolHandlers, FindingToolNames>` and registers `listIssues`, `getIssueDetails`
+and `triageIssue`. Keeping `Pick` preserves the checked set of keys and signatures.
+Argument aliases derive from `ToolArguments` instead of repeating its fields;
+existing shared types such as `CreateArguments` are imported directly. This makes
+registration readable and leaves function-size checks covering each operation.
+
+Long or repeated `Pick` types in function signatures also receive descriptive
+names. Installer `DownloadSecurityOptions` and `DownloadTlsOptions` live beside
+`DownloadOptions` in its owning `models.ts`; the aliases preserve their exact
+property sets and optionality. Avoid adding a generic registration factory just
+to hide the underlying handler contract.
+
 The tool catalog contains ordinary JSON Schema data. Reusable fragments have
 names such as `uuidSchema` and `paginationProperties`; they describe argument
 formats and property maps. Tool definitions use named options and check property
@@ -84,6 +100,10 @@ security rules; extracting the template preserves the generated plugin text.
   Member order is checked without autofixing: moving initialized fields may change
   behavior. Constructors have a separate 40-code-line limit.
 - At most three nested control-flow blocks; no nested ternaries.
+- At most two nested callbacks in handwritten source. Extract a named step when
+  another callback would obscure the surrounding operation. Branching complexity
+  above 15 produces a warning, including in short functions; it is a review signal,
+  not a requirement to hide individual conditions in separate helpers.
 - A 120-character code line limit. Long URLs, string/template literals and regular
   expressions are exempt; comments still have a 120-character limit.
 - Blank lines between methods and around blocks, multiline declarations and returns.
@@ -96,7 +116,8 @@ security rules; extracting the template preserves the generated plugin text.
   warning. Equal text does not prove equal meaning: review ownership and change
   independently meaningful values separately. Duplicate detection has no autofix
   and does not choose a shared constant by matching bytes.
-- Checked promises and strict equality.
+- Checked promises and strict equality, with the intentional `value == null` /
+  `value != null` exception for checking both null and undefined.
 - Imports at the beginning of the file, ordered as side effects, Node builtins,
   third-party packages, then project modules. Each group has alphabetical ordering
   and follows the previous group without a blank separator. The entire import block
@@ -105,6 +126,19 @@ security rules; extracting the template preserves the generated plugin text.
   Type-only imports follow the same groups as runtime imports. Parent (`../`)
   and sibling (`./`) modules belong to one project group. Blank lines between any
   adjacent imports are removed automatically.
+
+The project-specific size, layout, vocabulary, mutable-state and typed-promise
+rules apply to handwritten `src` files. General ESLint and formatting rules also
+cover tests, maintenance scripts, assets, the launcher and the listed root configs.
+Generated API files, build output, dependencies, local runtime/cache and live/probe
+scripts are excluded. The captured local catalog is exempt from vocabulary and
+duplicate-string checks. These scopes are explicit in `eslint.config.js`.
+
+Inline ESLint configuration is disabled: an `eslint-disable` comment cannot silence
+a required check. Put a narrowly scoped exception and its reason in the shared
+ESLint config. The ZIP name validator has one such exception for a regular expression
+that deliberately rejects control characters. File-size exception comments below
+are a separate, checked mechanism and remain visible in the report.
 
 An indexed type such as `PushMetricExporter['export']` refers to an existing SDK
 member. Its quoted key is a type annotation and is erased from runtime code.
@@ -136,9 +170,12 @@ and a filtering function rather than receiving mutable collections. The private
 write-validator cache stays in `write-schema.ts`: it is keyed only by bundled schema
 names, independently of session or request identity. Request-specific mutable state
 belongs to service instances with an explicit lifecycle.
-Lint rejects directly exported module-level `Map`, `Set`, `WeakMap` and `WeakSet`
-instances, including collections annotated as readonly: callers should receive
-operations or snapshots rather than the shared mutable instance.
+Lint rejects exported module-level `Map`, `Set`, `WeakMap` and `WeakSet` instances,
+including local aliases, readonly assertions and `Object.freeze` wrappers. Those
+wrappers do not prevent collection mutations. Callers should receive operations,
+snapshots or factories rather than the shared mutable instance. This is a targeted
+syntax check, not whole-program proof of immutability; nested containers, getters
+and arbitrary factory calls still need review.
 
 Functions and methods use these size bands, excluding blank and comment-only lines:
 
@@ -148,6 +185,13 @@ Functions and methods use these size bands, excluding blank and comment-only lin
 | 21–35        | Normal         | Informational report                             |
 | 36–50        | Review         | Lint warning; inspect for named steps to extract |
 | More than 50 | Oversized      | Lint error                                       |
+
+Objects containing inline functions also have a combined 50-code-line limit.
+This catches large handler registries even when every individual callback fits
+the function limit. Move implementations into named functions and register their
+references. Plain data objects, including schemas, and tables of named function
+references are exempt from this object limit. TypeScript assertions around an
+inline function do not bypass the check.
 
 Handwritten source files use the following bands. Blank and comment-only lines
 are excluded, just as for functions; the report also shows physical file length.
@@ -166,13 +210,69 @@ source needs this exception. Generated API sources and the captured local catalo
 keep their existing treatment as external contract data.
 
 `npm run quality:report` lists function and file distributions and review candidates.
-Add `-- --json` for an object with `functions` and `files` arrays. Size limits prompt
-separation of responsibilities; useful whitespace and comments remain encouraged.
+Add `-- --json` for an object with `functions`, `files` and `errors` arrays. The report
+fails on oversized code or other source lint errors. CI prints the report after
+verification. Size limits prompt separation of responsibilities; useful whitespace
+and comments remain encouraged. The checked ESLint configuration and regression
+tests in `test/quality-rules.test.ts` define the enforced rules.
 
 ## Verification
 
-Run `npm run verify` for metadata, lint, formatting, TypeScript, the test suite with
-coverage gates and the build. Run `npm run smoke:artifact` afterward to verify the
-packed package in isolation. Coverage gates remain 90% for lines, statements and
-functions, and 80% for branches. Tests use synthetic sessions and an independent
-AIE HTTP fixture; published artifacts contain no credentials.
+| Entry point              | Checks                                                                                                                     |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `npm run lint`           | ESLint errors block; warnings remain advisory.                                                                             |
+| `npm run typecheck`      | `tsc --noEmit`: strict types and checked JS in `src` and `test`; no lint or tests.                                         |
+| `npm run build`          | Bundle source and copy assets/notices; does not run lint, TypeScript checking or tests.                                    |
+| `npm run verify`         | Metadata consistency → lint → formatting → typecheck → coverage tests → build; stops on failure.                           |
+| Pre-commit               | `lint-staged`: ESLint fixes and Prettier on staged matching files, including `.mjs`/`.cjs`; no full verification.          |
+| Pre-push                 | Full `npm run verify`.                                                                                                     |
+| `npm pack` / prepack     | Synchronize metadata, then full verification/build.                                                                        |
+| `npm run smoke:artifact` | Pack with scripts disabled, install in isolation and check CLI/MCP/assets; uses the existing build.                        |
+| CI                       | Full verification, size report, runtime dependency audit, package inspection and artifact smoke on 3 OSes × Node 18/20/22. |
+
+Run `npm run verify`, then `npm run smoke:artifact` to check both source and the
+packed package. Coverage gates are 90% for lines, statements and functions, and
+80% for branches across handwritten `src/**/*.ts`; they are aggregate thresholds,
+not per-file guarantees. No selected tests is an error. Tests use synthetic
+sessions and an independent AIE HTTP fixture.
+
+CI runs for pull requests, pushes to main/master and manual dispatch. Local hooks
+can be bypassed, so they do not replace required CI checks in branch protection;
+repository files alone do not establish whether that protection is enabled.
+Architectural ownership, absence of dependency cycles, meaningful names, suitable
+abstractions and complete secret hygiene still require review and targeted tests.
+The handler-to-registry import restriction checks normalized static module paths;
+it does not enforce every boundary in the architecture table.
+
+## Local development
+
+Install dependencies, verify the source and smoke-test the resulting package:
+
+```bash
+npm ci
+npm run verify
+npm run smoke:artifact
+node ./bin/ptai-mcp.js --help
+```
+
+`npm run build` is useful during development; run `verify` for the complete checks.
+Use `node ./bin/ptai-mcp.js install` to exercise setup from the source tree. The
+analyzer bundle remains optional. `node ./bin/ptai-mcp.js start` launches stdio MCP
+for a client configured to use this local checkout.
+
+To inspect a packed build, run `npm run artifact` and use the `.tgz` filename it
+prints. Replace `<archive.tgz>` in this example with that filename:
+
+```bash
+npm exec --yes --package="./<archive.tgz>" -- ptai-mcp --help
+```
+
+The setup CLI writes agent configuration using the published package name via
+`npx`. For an unpublished build, configure the test client to invoke Node with the
+absolute path to this checkout's `bin/ptai-mcp.js` and the `start` argument.
+The artifact smoke check uses an isolated installation automatically.
+
+Package/Registry identities and release metadata synchronization are documented
+in [RELEASING.md](../RELEASING.md). User-facing configuration and workflow details
+are in [usage.md](usage.md); telemetry collection and opt-out are in
+[telemetry.md](telemetry.md).

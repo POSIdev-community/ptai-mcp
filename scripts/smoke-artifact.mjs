@@ -19,6 +19,9 @@ const npm = (args) =>
     stdio: ['ignore', 'pipe', 'inherit'],
   });
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ptai-mcp-artifact-'));
+if (path.dirname(path.resolve(tempDir)) !== path.resolve(os.tmpdir())) {
+  throw new Error('Artifact cleanup target is outside its temporary parent.');
+}
 
 try {
   const packOutput = npm(['pack', '--ignore-scripts', '--json', '--pack-destination', tempDir]);
@@ -38,6 +41,8 @@ try {
   npm([
     'install',
     '--ignore-scripts',
+    '--no-audit',
+    '--no-fund',
     '--engine-strict',
     '--prefix',
     installDir,
@@ -47,6 +52,11 @@ try {
 
   const cliPath = path.join(installDir, 'node_modules', '@posidev-community', 'ptai-mcp', 'bin', 'ptai-mcp.js');
   const packageRoot = path.dirname(path.dirname(cliPath));
+  for (const name of ['README.md', 'docs/usage.md', 'docs/telemetry.md', 'docs/architecture.md', 'RELEASING.md']) {
+    if (!fs.statSync(path.join(packageRoot, name)).size) {
+      throw new Error(`Packed documentation is empty: ${name}`);
+    }
+  }
   if (!fs.statSync(path.join(packageRoot, 'dist', 'assets', 'agents', 'opencode-plugin.ts.template')).size) {
     throw new Error('Packed OpenCode plugin template is empty.');
   }
@@ -91,7 +101,7 @@ try {
       new StdioClientTransport({ command: process.execPath, args: [cliPath, 'start'], env, stderr: 'inherit' }),
     );
     const tools = (await client.listTools()).tools;
-    if (tools.length !== 33 || tools.filter((tool) => tool.name.startsWith('aie_')).length !== 22) {
+    if (tools.length !== 32 || tools.filter((tool) => tool.name.startsWith('aie_')).length !== 21) {
       throw new Error('Packed MCP tool catalog is incomplete.');
     }
     if ((await client.listResources()).resources.length !== 3 || (await client.listPrompts()).prompts.length !== 1) {
@@ -107,5 +117,5 @@ try {
 
   process.stdout.write(`Artifact smoke test passed: ${filename}\n`);
 } finally {
-  fs.rmSync(tempDir, { recursive: true, force: true });
+  fs.rmSync(tempDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 }

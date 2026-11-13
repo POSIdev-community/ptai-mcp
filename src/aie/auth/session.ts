@@ -51,14 +51,7 @@ export class Sessions {
           return;
         }
 
-        if (this.watchTimer) {
-          clearTimeout(this.watchTimer);
-        }
-
-        this.watchTimer = setTimeout(() => {
-          void this.observe().catch(() => undefined);
-        }, 75);
-        this.watchTimer.unref();
+        this.scheduleObservation();
       });
       this.watcher.unref();
     } catch {
@@ -102,6 +95,16 @@ export class Sessions {
 
       return this.connect(shared, true);
     }
+  }
+
+  public async local(): Promise<ConnectedSession> {
+    const shared = await this.storage.read();
+
+    if (!this.closed && this.cached && shared && this.cached.fingerprint === sessionFingerprint(shared)) {
+      return this.cached.value;
+    }
+
+    return this.require();
   }
 
   public async context(loginId?: string): Promise<Record<string, unknown>> {
@@ -174,6 +177,17 @@ export class Sessions {
 
     this.attempt?.close();
     // Process shutdown is deliberately not an AIE logout.
+  }
+
+  private scheduleObservation() {
+    if (this.watchTimer) {
+      clearTimeout(this.watchTimer);
+    }
+
+    this.watchTimer = setTimeout(() => {
+      void this.observe().catch(() => undefined);
+    }, 75);
+    this.watchTimer.unref();
   }
 
   private cancelLogin(loginId?: string) {

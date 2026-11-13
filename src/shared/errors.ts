@@ -14,6 +14,9 @@ export class ToolError extends Error {
       http_status?: number;
       server_code?: string;
       invalid_fields?: string[];
+      failed_check?: string;
+      expected?: unknown;
+      actual?: unknown;
     } = {},
   ) {
     super(message);

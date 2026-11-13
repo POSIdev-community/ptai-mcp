@@ -37,9 +37,9 @@ it('serves the complete static MCP catalog without starting the local runtime or
     await runtime.close();
   });
   const tools = (await client.listTools()).tools;
-  expect(tools).toHaveLength(33);
-  expect(new Set(tools.map((tool) => tool.name)).size).toBe(33);
-  expect(tools.filter((tool) => tool.name.startsWith('aie_'))).toHaveLength(22);
+  expect(tools).toHaveLength(32);
+  expect(new Set(tools.map((tool) => tool.name)).size).toBe(32);
+  expect(tools.filter((tool) => tool.name.startsWith('aie_'))).toHaveLength(21);
   expect((await client.listResources()).resources).toEqual(localCatalog.resources);
   expect((await client.listResourceTemplates()).resourceTemplates).toEqual([]);
   expect((await client.listPrompts()).prompts).toEqual(localCatalog.prompts);

@@ -8,10 +8,12 @@ export const ScanState = {
   Stopped: 'stopped',
   Unknown: 'unknown',
 } as const;
+export const ScanOrder = { Ascending: 'asc', Descending: 'desc' } as const;
 export type ScanState = (typeof ScanState)[keyof typeof ScanState];
 
 export const ScanCorrelation = {
-  Queue: 'queue_item',
+  Queue: 'queue',
+  History: 'branch_history',
   ExplicitScan: 'explicit_scan_id',
   Unconfirmed: 'unconfirmed',
 } as const;
@@ -30,6 +32,9 @@ export interface TrackedRun extends ScanTarget {
   scanId?: string;
   before: string[];
   acceptedAt: string;
+  label?: string;
+  initiatorId?: string;
+  correlation?: typeof ScanCorrelation.Queue | typeof ScanCorrelation.History;
 }
 export type RunTracker = Map<string, TrackedRun>;
 export type SelectedRun = { kind: 'queue'; id: string } | { kind: 'scan'; id: string };
@@ -72,7 +77,7 @@ export interface ResolvedScanStatus extends StatusBase {
   previous_scan_id: ScanResultModel['previousScanResultId'];
   actual_scope: ScanResultModel['scanType'];
   metadata: ScanResultModel;
-  correlation: typeof ScanCorrelation.Queue | typeof ScanCorrelation.ExplicitScan;
+  correlation: typeof ScanCorrelation.Queue | typeof ScanCorrelation.ExplicitScan | typeof ScanCorrelation.History;
 }
 
 export type ScanStatus = QueuedStatus | UnknownQueueStatus | ResolvedScanStatus;

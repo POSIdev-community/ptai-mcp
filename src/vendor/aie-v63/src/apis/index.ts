@@ -12,3 +12,5 @@ export * from './PmRuleVulnTypesApi.js';
 export * from './AgentsApi.js';
 export * from './ScanQueueApi.js';
 export * from './ChangeHistoryApi.js';
+export * from './FileContentApi.js';
+export * from './DirectoryContentApi.js';

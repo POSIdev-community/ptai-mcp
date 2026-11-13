@@ -1,10 +1,10 @@
 import { confirm, isCancel } from '@clack/prompts';
-import type { DownloadOptions } from '../services/installer/models.js';
+import type { DownloadTlsOptions } from '../services/installer/models.js';
 import { logger as log } from './logger.js';
 
 export const ALLOW_INSECURE_TLS_ENV = 'PTAI_MCP_ALLOW_INSECURE_TLS';
 
-export function getDownloadSecurityOptions(): Pick<DownloadOptions, 'allowInsecureTls' | 'confirmInsecureTls'> {
+export function getDownloadSecurityOptions(): DownloadTlsOptions {
   return {
     allowInsecureTls: process.env[ALLOW_INSECURE_TLS_ENV] === '1',
     confirmInsecureTls: confirmInsecureTls,

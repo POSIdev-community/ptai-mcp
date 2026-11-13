@@ -12,6 +12,10 @@
     "bin/",
     "dist/",
     "README.md",
+    "docs/usage.md",
+    "docs/telemetry.md",
+    "docs/architecture.md",
+    "RELEASING.md",
     "server.json"
   ],
   "scripts": {

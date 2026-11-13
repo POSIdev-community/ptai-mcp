@@ -9,7 +9,9 @@ import { AuthApi } from '../../vendor/aie-v63/src/apis/AuthApi.js';
 import { BranchesApi } from '../../vendor/aie-v63/src/apis/BranchesApi.js';
 import { ChangeHistoryApi } from '../../vendor/aie-v63/src/apis/ChangeHistoryApi.js';
 import { ConfigsApi } from '../../vendor/aie-v63/src/apis/ConfigsApi.js';
+import { DirectoryContentApi } from '../../vendor/aie-v63/src/apis/DirectoryContentApi.js';
 import { ExternalAuthApi } from '../../vendor/aie-v63/src/apis/ExternalAuthApi.js';
+import { FileContentApi } from '../../vendor/aie-v63/src/apis/FileContentApi.js';
 import { InitiatorApi } from '../../vendor/aie-v63/src/apis/InitiatorApi.js';
 import { PMGroupsApi } from '../../vendor/aie-v63/src/apis/PMGroupsApi.js';
 import { PmRuleVulnTypesApi } from '../../vendor/aie-v63/src/apis/PmRuleVulnTypesApi.js';
@@ -43,11 +45,18 @@ export class AieApi {
   public readonly agents: AgentsApi;
   public readonly queue: ScanQueueApi;
   public readonly history: ChangeHistoryApi;
+  public readonly files: FileContentApi;
+  public readonly directories: DirectoryContentApi;
 
   private readonly request: typeof fetch;
   private readonly changingResponses = new WeakSet<Response>();
 
-  public constructor(origin: string, token?: string, request: typeof fetch = fetch) {
+  public constructor(
+    origin: string,
+    private readonly token?: string,
+    request: typeof fetch = fetch,
+    private readonly signal?: AbortSignal,
+  ) {
     this.origin = origin;
     this.request = request;
     const config = new Configuration({
@@ -70,6 +79,16 @@ export class AieApi {
     this.agents = new AgentsApi(config);
     this.queue = new ScanQueueApi(config);
     this.history = new ChangeHistoryApi(config);
+    this.files = new FileContentApi(config);
+    this.directories = new DirectoryContentApi(config);
+  }
+
+  public scoped(signal: AbortSignal): AieApi {
+    const scoped = new AieApi(this.origin, this.token, this.request, signal);
+    scoped.beforeRequest = this.beforeRequest;
+    scoped.recoverUnauthorized = this.recoverUnauthorized;
+
+    return scoped;
   }
 
   public async json<T>(call: Promise<ApiResponse<T>>): Promise<T> {
@@ -149,6 +168,7 @@ export class AieApi {
 
     try {
       const prepared = await this.prepareRequest(init);
+      prepared.signal?.throwIfAborted();
       const initialResponse = await this.request(url, prepared);
       const response = await this.recoverResponse(initialResponse, url, prepared, changing);
 
@@ -170,7 +190,7 @@ export class AieApi {
     const prepared: RequestInit = {
       ...init,
       redirect: RedirectPolicy.Reject,
-      signal: init?.signal ?? AbortSignal.timeout(LIMITS.requestMs),
+      signal: init?.signal ?? this.signal ?? AbortSignal.timeout(LIMITS.requestMs),
     };
 
     if (this.beforeRequest) {
