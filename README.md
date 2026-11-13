@@ -1,7 +1,7 @@
 # PT Application Inspector MCP
 
-Use PT Application Inspector from your AI agent: work with AIE projects and
-findings, manage scans, or analyze code locally.
+Connect your AI agent to PT Application Inspector to triage findings, manage AIE
+scans and analyze code locally.
 
 ## Quick start
 
@@ -15,12 +15,11 @@ npx @posidev-community/ptai-mcp install
 2. Select the agents to configure. Use **Space** to select and **Enter** to confirm.
 3. Restart or reconnect MCP in your agent.
 
-**For AIE server tools, the analyzer bundle is optional.** Choose **No** (the default) at the
-bundle prompt to configure MCP without downloading it. Local analysis and hooks
-require the bundle; hooks setup is offered when the required bundle is available.
+For AIE server tools, choose **No** (the default) at the bundle prompt. Local
+analysis and hooks require the bundle. Setup offers hooks when the required
+bundle is installed.
 
-Your agent launches the MCP server when it connects. You do not need to run
-`start` separately for a configured agent.
+Your configured agent launches the MCP server when it connects.
 
 Supported on Windows, macOS and Linux. Built-in setup supports Cursor, Claude
 Desktop, Claude Code, Windsurf, Kimi Code, Codex, Antigravity, Gemini CLI and
@@ -42,8 +41,7 @@ Once connected, you can ask the agent to:
 - Start a scan, check its progress and stop it.
 - Read source files or download sources for investigation.
 
-For local analysis, install the optional bundle and enable the tools or hooks
-in your agent. An AIE connection is not required for local analysis.
+Install the optional bundle to analyze code locally, without an AIE connection.
 
 ## Manage your installation
 
@@ -66,9 +64,9 @@ limits, see the [usage reference](docs/usage.md).
 
 ## Privacy and telemetry
 
-Release builds send technical usage telemetry by default, including a pseudonymous
-installation identifier. Source code, comments, file paths, AIE URLs, setting values
-and AIE credentials are excluded.
+Release builds send usage metrics and a pseudonymous installation identifier by
+default. They exclude source code, comments, file paths, AIE URLs, setting values
+and AIE credentials.
 
 To opt out, add this environment setting to the MCP launch configuration and
 restart MCP:

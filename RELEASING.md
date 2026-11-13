@@ -1,21 +1,19 @@
 # Releasing `@posidev-community/ptai-mcp`
 
-This document describes how to publish a new npm package version, create the
-corresponding GitHub release, and publish the same version to the Official MCP
-Registry.
+Publish the npm package, create its GitHub release and publish the same version
+to the Official MCP Registry.
 
 ## Release identities
 
-The project has two related but different public identifiers:
+Use these publication identifiers:
 
 | Surface               | Identifier                             |
 | --------------------- | -------------------------------------- |
 | npm package           | `@posidev-community/ptai-mcp`          |
 | Official MCP Registry | `io.github.POSIdev-community/ptai-mcp` |
 
-The capitalization of `POSIdev-community` in the MCP Registry name is
-significant. It must exactly match the GitHub organization name and the value
-authorized by the Registry.
+Match the `POSIdev-community` capitalization in the MCP Registry name to the
+GitHub organization name and the value authorized by the Registry.
 
 `package.json` is the source of truth for the package name, version, and MCP
 Registry name. The `npm run metadata:sync` command copies those values into
@@ -23,7 +21,7 @@ Registry name. The `npm run metadata:sync` command copies those values into
 
 ## Prerequisites
 
-Before starting, verify that you have:
+Required:
 
 - Node.js 18.19.x, or Node.js 20.6 or newer, and npm;
 - publish access to the `posidev-community` npm organization;
@@ -106,16 +104,16 @@ installer bundle version 3.0.1.1505 with the release candidate.
 Do not turn the optional BE4P shared-session patch into a POC installation
 requirement without a separate owner decision.
 
-Run the complete verification and inspect the publishable artifact:
-
-The pinned SDK1.32.2 is a build dependency: tsup includes the stdio modules in
+The pinned SDK 1.32.2 is a build dependency: tsup includes the stdio modules in
 the CLI without installing its unused HTTP adapter in consumer environments.
-Keep that composition when supporting Node18. The build writes a component
-manifest and complete licenses into dist. Run `npm run audit:runtime` after
+Keep that composition when supporting Node 18. The build writes a component
+manifest and complete licenses into `dist`. Run `npm run audit:runtime` after
 building: it audits both installed runtime dependencies and compiled components,
 even when npm marks the original SDK dependency as dev. Full dev audit still
 has separately reported advisories. Engine-strict clean installation is part
 of artifact smoke.
+
+Run the complete verification and inspect the publishable artifact:
 
 ```powershell
 npm run verify
@@ -168,9 +166,8 @@ Publish the scoped package publicly:
 npm publish --access public
 ```
 
-An npm version cannot be overwritten. If publishing succeeds and a correction
-is needed, prepare a new patch version instead of trying to republish the same
-version.
+After publishing, corrections require a new patch version: npm does not allow
+overwriting a published version.
 
 Verify the publication:
 
@@ -270,9 +267,8 @@ revoke it and create a replacement before continuing.
 
 ## 8. Publish the new version to the Official MCP Registry
 
-Every npm release that should be discoverable as the current MCP version must
-also be published to the Registry. npm publication does not update the Registry
-automatically.
+Publish each discoverable release to the MCP Registry after publishing it to npm.
+These are separate publication steps.
 
 Validate and publish the synchronized `server.json`:
 
@@ -289,9 +285,8 @@ Successfully published
 Server io.github.POSIdev-community/ptai-mcp version <VERSION>
 ```
 
-Publishing a new version does not remove the previous versions. The newest
-active version is marked as `isLatest: true` by the Registry. There is normally
-no need to deprecate the previous version.
+The Registry keeps previous versions and marks the newest active version as
+`isLatest: true`. Older versions normally do not need deprecation.
 
 Verify the Registry entry:
 
@@ -336,8 +331,7 @@ isLatest: true
 
 ## Future automation
 
-The manual Registry step can be automated in GitHub Actions with GitHub OIDC.
-When adding automation, use a release-tag workflow, grant only
+For GitHub Actions automation, use GitHub OIDC and a release-tag workflow. Grant only
 `id-token: write` and `contents: read`, and publish npm before publishing the
 corresponding Registry metadata.
 

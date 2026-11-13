@@ -37,8 +37,7 @@ the functions. For example, `findingHandlers` uses
 `Pick<ToolHandlers, FindingToolNames>` and registers `listIssues`, `getIssueDetails`
 and `triageIssue`. Keeping `Pick` preserves the checked set of keys and signatures.
 Argument aliases derive from `ToolArguments` instead of repeating its fields;
-existing shared types such as `CreateArguments` are imported directly. This makes
-registration readable and leaves function-size checks covering each operation.
+existing shared types such as `CreateArguments` are imported directly.
 
 Long or repeated `Pick` types in function signatures also receive descriptive
 names. Installer `DownloadSecurityOptions` and `DownloadTlsOptions` live beside
@@ -50,7 +49,7 @@ The tool catalog contains ordinary JSON Schema data. Reusable fragments have
 names such as `uuidSchema` and `paginationProperties`; they describe argument
 formats and property maps. Tool definitions use named options and check property
 and required-field names against `ToolArguments`. Strict schema-compilation tests
-check the JSON Schema keywords. The catalog remains declarative JSON Schema data.
+check the JSON Schema keywords.
 
 Shared agent descriptors, session models, finding filters and job contexts live
 in their owning `models.ts` modules. Types that describe one function's API, such
@@ -144,7 +143,7 @@ An indexed type such as `PushMetricExporter['export']` refers to an existing SDK
 member. Its quoted key is a type annotation and is erased from runtime code.
 Use a local type alias when a derived signature becomes hard to read.
 
-The small `scripts/prettier-class-padding.mjs` extension keeps the opening blank
+The `scripts/prettier-class-padding.mjs` extension keeps the opening blank
 line when Prettier formats a class. Tests check that Prettier and ESLint converge
 and that empty classes and method bodies keep their usual formatting.
 
@@ -212,9 +211,8 @@ keep their existing treatment as external contract data.
 `npm run quality:report` lists function and file distributions and review candidates.
 Add `-- --json` for an object with `functions`, `files` and `errors` arrays. The report
 fails on oversized code or other source lint errors. CI prints the report after
-verification. Size limits prompt separation of responsibilities; useful whitespace
-and comments remain encouraged. The checked ESLint configuration and regression
-tests in `test/quality-rules.test.ts` define the enforced rules.
+verification. The ESLint configuration and regression tests in
+`test/quality-rules.test.ts` define the enforced rules.
 
 ## Verification
 
@@ -255,7 +253,7 @@ npm run smoke:artifact
 node ./bin/ptai-mcp.js --help
 ```
 
-`npm run build` is useful during development; run `verify` for the complete checks.
+Use `npm run build` to rebuild the CLI and `npm run verify` to run all checks.
 Use `node ./bin/ptai-mcp.js install` to exercise setup from the source tree. The
 analyzer bundle remains optional. `node ./bin/ptai-mcp.js start` launches stdio MCP
 for a client configured to use this local checkout.

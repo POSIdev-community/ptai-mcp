@@ -1,7 +1,7 @@
 # Configuration and AIE usage reference
 
-Start with `npx @posidev-community/ptai-mcp install` for automatic agent setup.
-This reference covers manual configuration, troubleshooting and workflow details.
+Run `npx @posidev-community/ptai-mcp install` to configure supported agents.
+For manual setup or troubleshooting, use the sections below.
 
 ## Agent configuration
 
@@ -72,25 +72,27 @@ issue only.
 existing project with `kind=branch`. Branch mode preserves shared settings and
 does not write the user's working-branch selection. AIE's Plugin default branch
 can change with scan/creation dates; the response reports before/after IDs when
-available. Partial failures retain created IDs and completed stages.
+available. If a later stage fails, the response retains created IDs and completed
+stages.
 
-Create/upload combines `.aiignore` and `.ptaiignore` exclusions, excludes `.git`
-and staging, skips symlinks and converts `.aiproj.json` only inside the archive.
+Creation and upload apply both `.aiignore` and `.ptaiignore` exclusions. They
+exclude `.git` and staging, skip symlinks and convert `.aiproj.json` only inside
+the archive.
 Readiness checks the configured source target and revision, plus directory
 contents when supported. It does not download an archive just to check readiness.
 
 `aie_start_scan` normally returns `scan_id` in the same call. Its 45-second budget
 waits for scan identification, not completion. If identification takes longer,
 continue with the returned `operation_id` rather than repeating the launch.
-Labels are `MCP` or `MCP-<label_suffix>`; they are descriptive, not unique.
+Labels are `MCP` or `MCP-<label_suffix>` and can repeat across scans.
 Exact queue correlation differs from inferred `branch_history`; ambiguous
 matches stay unconfirmed.
 
 `aie_get_operation` reads a local workflow or an explicitly selected remote scan.
 `workflow_state` and `scan_state` are separate. `aie_cancel_operation` cancels
-local work or stops a selected remote scan. Inferred history cannot authorize
-automatic stop by operation ID: select the scan ID explicitly. Stop acceptance
-does not confirm that analysis has stopped.
+local work or stops a selected remote scan. To stop a scan matched through
+history, pass its scan ID explicitly. After AIE accepts a stop request, read the
+scan status to confirm the outcome.
 
 Jobs live in the current MCP process; shutdown/logout do not stop server analysis.
 Local retained results remain readable offline under the same verified session
@@ -111,9 +113,10 @@ Settings return write schemas and revisions. Include the revision when saving
 to detect stale edits. Omitted/null HTTP and Form passwords preserve their value;
 an empty string clears it. Empty proxy passwords preserve the value.
 If AIE hides a RawCookie, explicitly replace it or disable that authentication
-type before a write requiring preservation. Accepted hidden password replacements
-can return `verified=false` and `verification.unverified_fields`; inspect these
-before claiming exact readback.
+type before a write requiring preservation. A response that accepts a hidden
+password replacement can still report `verified=false` and
+`verification.unverified_fields`. Check these fields to see which values AIE
+could not confirm.
 
 ## Local analyzer files
 
