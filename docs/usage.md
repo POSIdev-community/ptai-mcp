@@ -35,6 +35,24 @@ Use the configuration format required by your client. Additional arguments after
 AIE HTTPS verifies certificates. For a corporate CA, set `NODE_EXTRA_CA_CERTS`
 to a trusted PEM file in the MCP process environment before starting it.
 
+If you need to connect to a development AIE server without a trusted CA, explicitly
+allow its HTTPS origin in the MCP launch environment, then restart MCP:
+
+```json
+{
+  "env": {
+    "PTAI_MCP_AIE_INSECURE_TLS_ORIGINS": "https://aie.example:8443"
+  }
+}
+```
+
+This disables certificate verification only for the listed AIE origins, including
+their ports. Use comma-separated origins for multiple servers. Wildcards,
+credentials, paths, queries and fragments are rejected. Other AIE servers, the
+analyzer downloader and telemetry retain their normal TLS settings. AIE requests
+do not follow redirects. MCP does not enable this mode or retry a failed request
+automatically after a certificate error.
+
 The analyzer downloader separately asks for explicit approval if a PT installer
 endpoint has an untrusted certificate. For a trusted, non-interactive development
 environment, `PTAI_MCP_ALLOW_INSECURE_TLS=1` supplies that approval. It applies
@@ -102,6 +120,8 @@ repeating a change.
 `aie_get_sources` reads a paged tree or a bounded file range. Content is the current
 branch source, even with `scan_id`; `snapshot_match` remains unknown. File reads
 have a 1 MiB upstream limit and 64 KiB output limit, with explicit truncation.
+Relative paths from findings, including a leading `./`, are accepted. Parent
+segments and absolute paths are rejected.
 On servers missing source routes, a reported archive fallback reads at most
 32 MiB compressed without extracting to disk. Downloads require a new destination
 directory and publish under its `sources` child; they do not guarantee a historical

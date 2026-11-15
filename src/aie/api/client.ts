@@ -23,6 +23,7 @@ import { VersionApi } from '../../vendor/aie-v63/src/apis/VersionApi.js';
 import { type ApiResponse, Configuration, FetchError } from '../../vendor/aie-v63/src/runtime.js';
 import { boundedBody } from './body.js';
 import { httpError, networkError } from './http-errors.js';
+import { aieRequest } from './transport.js';
 
 /** All domain requests use the generated AI.Api.Client 6.3 client, never a tool-supplied URL. */
 export class AieApi {
@@ -54,11 +55,11 @@ export class AieApi {
   public constructor(
     origin: string,
     private readonly token?: string,
-    request: typeof fetch = fetch,
+    request?: typeof fetch,
     private readonly signal?: AbortSignal,
   ) {
     this.origin = origin;
-    this.request = request;
+    this.request = request ?? aieRequest(origin);
     const config = new Configuration({
       basePath: origin,
       apiKey: () => (token ? this.authorization(token) : ''),
