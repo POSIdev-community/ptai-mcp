@@ -79,10 +79,23 @@ Search covers internal names, available CWE titles and component names.
 List/summary counts include discarded and suppressed findings, unlike normal
 AIE vulnerability statistics.
 
-Triage uses the separate comment endpoint when the status is unchanged; an empty
-comment with unchanged status is a no-op. AIE synchronizes matching hashes to
-other branches asynchronously. A verified triage response covers the selected
-issue only.
+Summary groups include `scan_module`, `issue_type` and `is_suppressed`.
+For example, a race can have
+`scan_module=RaceConditionDetection`, `issue_type=Vulnerability`, `type=Toctou`.
+Use `is_suppressed=false` to exclude suppressed findings, and `approval_state`
+and `severity` to match a UI counter. The complete list includes severity `None`.
+
+Incremental scans can reuse earlier issue records. Details verify membership in
+the selected scan and return `issue_record_scan_id` and `evidence_reused`.
+Neither field proves a source revision. Race details include
+`vulnerableCode.raceCondition.sharedData`, `firstPath` and `secondPath`, with both
+entry points, calls, accesses and coordinates. Check the finding type and evidence;
+the same module can return other vulnerability types.
+
+Triage uses the comment endpoint when the status is unchanged; an empty comment
+with unchanged status is a no-op. Updating a shared issue affects all incremental
+results containing it. AIE also synchronizes matching hashes to other branches
+asynchronously. Readback verifies the selected issue only.
 
 ## Projects, sources and scans
 
@@ -127,6 +140,10 @@ On servers missing source routes, a reported archive fallback reads at most
 directory and publish under its `sources` child; they do not guarantee a historical
 scan snapshot.
 
+Some AIE 6.3 branch routes return HTTP 500 for paths with special characters.
+For those paths, supply a known `scan_id` to use VfsNode. MCP returns 403/500
+errors without retrying through an archive or selecting another scan.
+
 ## Settings and credentials
 
 Settings return write schemas and revisions. Include the revision when saving
@@ -137,6 +154,26 @@ type before a write requiring preservation. A response that accepts a hidden
 password replacement can still report `verified=false` and
 `verification.unverified_fields`. Check these fields to see which values AIE
 could not confirm.
+
+Readback compares project languages as a set because AIE may reorder them.
+Other arrays use exact comparison.
+
+The write schema uses the connected AIE version and its current settings fields.
+Historical reads return historical values and revisions, with
+`write_schema_source=current_project`. Read current settings before saving.
+Updates preserve untouched sections, including Asint. Unrecognized top-level
+scan settings block the write before PUT.
+
+For race detection on AIE 6.4, read `section=scan`, then use
+`aie_update_project_settings` to set
+`whiteBoxSettings.searchForRaceConditionsEnabled=true`. Leave other module choices
+unchanged unless requested. AIE checks languages, license, integrations,
+permissions and executor availability; errors include known server codes.
+`raceConditionSettings` is offered only when the server returns that section.
+
+`scope=Full|Incremental` selects scan scope. Modules come from project settings,
+which an uploaded `.aiproj.json` can override. Check historical
+`enabledScanModules`, `scanModules` and `wasOverriddenByAiproj` after launch.
 
 ## Local analyzer files
 

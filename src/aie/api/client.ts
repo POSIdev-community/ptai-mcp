@@ -30,6 +30,8 @@ export class AieApi {
 
   public readonly origin: string;
 
+  public serverVersion?: string;
+
   public beforeRequest?: () => Promise<string>;
   public recoverUnauthorized?: () => Promise<string>;
   public readonly auth: AuthApi;
@@ -86,6 +88,7 @@ export class AieApi {
 
   public scoped(signal: AbortSignal): AieApi {
     const scoped = new AieApi(this.origin, this.token, this.request, signal);
+    scoped.serverVersion = this.serverVersion;
     scoped.beforeRequest = this.beforeRequest;
     scoped.recoverUnauthorized = this.recoverUnauthorized;
 

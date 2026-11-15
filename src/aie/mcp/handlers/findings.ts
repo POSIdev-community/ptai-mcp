@@ -16,6 +16,7 @@ function listIssues(args: ListIssuesArguments, context: ToolContext) {
     approval_state: args.approval_state,
     issue_type: args.issue_type,
     is_new: args.is_new,
+    is_suppressed: args.is_suppressed,
     path: args.path,
     counter: args.counter,
     type: args.type,

@@ -1,11 +1,18 @@
 import { Effects } from '../../shared/effects.js';
 import { ErrorCode } from '../../shared/error-codes.js';
 import { ToolError } from '../../shared/errors.js';
+import { schemas as observed63 } from '../../vendor/aie-v63/observed.js';
 import { ApiErrorType } from '../../vendor/aie-v63/src/models/index.js';
 import { FetchError } from '../../vendor/aie-v63/src/runtime.js';
+import { schemas as schemas64 } from '../../vendor/aie-v64/contract.js';
 import { boundedBody } from './body.js';
 
-const knownServerCodes = new Set<string>(Object.values(ApiErrorType));
+const knownServerCodes = new Set<string>([
+  ...Object.values(ApiErrorType),
+  ...(observed63.ApiErrorType.enum as string[]),
+  ...(schemas64.ApiErrorType.enum as string[]),
+]);
+
 const statusCodes = new Map<number, ErrorCode>([
   [400, ErrorCode.ValidationError],
   [401, ErrorCode.LoginRequired],
@@ -47,7 +54,7 @@ export async function httpError(response: Response, changing: boolean): Promise<
     server_code: knownServerCodes.has(serverCode) ? serverCode : undefined,
     invalid_fields: invalidFields.length ? invalidFields : undefined,
     retryable: !changing && (status === 429 || status >= 500),
-    next_action: nextAction(status, code),
+    next_action: nextAction(status, code, serverCode),
   });
 }
 
@@ -94,7 +101,7 @@ function httpFailureCode(status: number, serverCode: string): ErrorCode {
   return statusCodes.get(status) ?? ErrorCode.ServerError;
 }
 
-function nextAction(status: number, code: ErrorCode): string {
+function nextAction(status: number, code: ErrorCode, serverCode: string): string {
   if (status === 401) {
     return 'Call aie_auth(action=login), then explicitly repeat the operation.';
   }
@@ -105,6 +112,14 @@ function nextAction(status: number, code: ErrorCode): string {
 
   if (status === 403) {
     return 'Check the current server permissions.';
+  }
+
+  if (serverCode === 'INVALID_LANGUAGE_FOR_RACE_CONDITION') {
+    return 'Check the languages supported by RaceConditionDetection on this AIE build and the selected project languages.';
+  }
+
+  if (serverCode === 'ASINT_NAIRA_INTEGRATION_DISABLED') {
+    return 'Ask the AIE administrator to enable the Asint/Naira integration, or disable that option in project settings.';
   }
 
   return 'Inspect the target and request parameters.';

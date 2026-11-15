@@ -117,7 +117,7 @@ describe('AIE dispatcher browsing, context and triage', () => {
     });
     f.server.issue.scanResultId = 'other-scan';
     await expect(findings.details(ids.project, ids.scan, ids.issue)).rejects.toMatchObject({
-      code: 'AIE_TARGET_MISMATCH',
+      code: 'AIE_NOT_FOUND',
     });
     expect(f.server.calls.filter((call) => call.method !== 'GET')).toHaveLength(0);
   });

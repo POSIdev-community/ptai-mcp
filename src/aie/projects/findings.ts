@@ -79,10 +79,24 @@ export class Findings {
       this.api.projects.apiProjectsProjectIdIssuesIssueIdGetRaw({ projectId, issueId }),
     );
 
-    if (issue.id !== issueId || issue.scanResultId !== scanId) {
+    if (issue.id !== issueId || !issue.scanResultId) {
       throw new ToolError(ErrorCode.TargetMismatch, 'The issue does not belong to the selected scan.', {
         effects: Effects.NotApplied,
       });
+    }
+
+    if (issue.scanResultId !== scanId) {
+      // Incremental scans can reuse issue records from earlier scans.
+      await this.scan(projectId, issue.scanResultId, scan.branchId ?? undefined);
+      const members = await this.api.json(
+        this.api.projects.apiProjectsProjectIdScanResultsScanResultIdIssuesGetRaw({ projectId, scanResultId: scanId }),
+      );
+
+      if (!members.some((member) => member.id === issueId)) {
+        throw new ToolError(ErrorCode.TargetMismatch, 'The issue is not present in the selected scan.', {
+          effects: Effects.NotApplied,
+        });
+      }
     }
 
     return {
@@ -90,8 +104,11 @@ export class Findings {
       branch_id: scan.branchId,
       scan_id: scanId,
       issue_id: issueId,
+      issue_record_scan_id: issue.scanResultId,
+      evidence_reused: issue.scanResultId !== scanId,
+      evidence_source: 'stored_issue_record',
       issue,
-      source_revision: 'historical_scan',
+      source_revision: 'not_proven_by_issue_response',
       local_source_match: SourceMatch.Unknown,
       completeness: 'all_fields_available_from_AIE_full_issue_endpoint',
     };
@@ -137,7 +154,8 @@ export class Findings {
         effects: Effects.Applied,
         comment_readback: comment ? 'branch_history' : 'not_requested',
         verification_scope: 'selected_issue_only',
-        synchronization: 'AIE asynchronously synchronizes matching hashes to other branches; not verified here',
+        synchronization:
+          'Updating a shared issue affects its incremental results. AIE synchronizes matching hashes to other branches asynchronously; readback covers the selected issue only.',
       };
     } catch (error) {
       if (

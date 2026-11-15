@@ -12,6 +12,7 @@ export function matches(issue: VulnerabilityModel, filters: IssueFilters): boole
     (!filters.issue_type?.length || filters.issue_type.includes(issue.issueType ?? '')) &&
     (!filters.scan_module?.length || filters.scan_module.includes(issue.scanModule ?? '')) &&
     (filters.is_new === undefined || issue.isNew === filters.is_new) &&
+    (filters.is_suppressed === undefined || issue.isSuppressed === filters.is_suppressed) &&
     (filters.counter === undefined || issue.counter === filters.counter) &&
     (!filters.path ||
       [issue.sourceFile, issue.entryPointFile].some(
@@ -50,6 +51,9 @@ export function summarizeIssues(issues: VulnerabilityModel[]) {
     const values = {
       severity: issue.level,
       approval_state: issue.approvalState,
+      scan_module: issue.scanModule,
+      issue_type: issue.issueType,
+      is_suppressed: issue.isSuppressed == null ? undefined : String(issue.isSuppressed),
       type: issue.type,
       file: issue.sourceFile,
     };

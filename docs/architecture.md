@@ -21,6 +21,7 @@ npm package does not require an analyzer or access to a private package registry
 | `src/shared`                                             | Common errors, result effects, limits and JSON operations         |
 | `src/telemetry`                                          | Closed attribute allowlists and optional metric export            |
 | `src/vendor/aie-v63`                                     | Generated API client and Swagger contract                         |
+| `src/vendor/aie-v64`                                     | Generated 6.4 write schemas and source fingerprints               |
 | `assets/aie-login`                                       | Login HTML, CSS, browser JavaScript, SVG and fonts                |
 
 The MCP dispatcher validates untrusted arguments once and selects a typed handler.
@@ -59,6 +60,16 @@ Domain services use `AieApi`, which composes the generated endpoint clients and
 normalizes transport failures. Generated sources remain isolated and are excluded
 from handwritten-code lint and coverage checks. JSON assertions belong at validated
 boundaries rather than in each tool handler.
+
+The 6.3 endpoint client passes request objects directly; `AieApi.json` reads raw
+JSON and preserves new response fields. The authenticated server version selects
+the write schemas. Optional settings must also appear in the server's current
+settings response. Source Swagger hashes are stored beside the schemas.
+
+Incremental scans can reuse issue records from earlier scans. If the record's
+`scanResultId` differs from the selected scan, details check its project, branch
+and exact ID in the selected scan's compact issue list. A failed membership check
+blocks details and triage. Full evidence is fetched only for the selected issue.
 
 Shared session paths are resolved through the platform path helpers, including
 `LOCALAPPDATA` on Windows. Sessions are reread under a cross-process lock before

@@ -86,14 +86,20 @@ export class Sources {
       automatedAiTriageMinSeverity: defaults.automatedAiTriageMinSeverity,
     };
 
-    const write = writable(WriteModelName.CreateProject, JSON.parse(JSON.stringify(configuration)));
-    validateWrite(WriteModelName.CreateProject, write);
+    const write = writable(
+      WriteModelName.CreateProject,
+      JSON.parse(JSON.stringify(configuration)),
+      this.api.serverVersion,
+    );
+
+    validateWrite(WriteModelName.CreateProject, write, this.api.serverVersion);
+
     await this.api.empty(
       this.api.projects.apiProjectsProjectIdCompleteConfigurationPostRaw(
         {
           projectId,
           projectType: ProjectType.Permanent,
-          baseCreateProjectModel: writeDto(WriteModelName.CreateProject, write),
+          baseCreateProjectModel: writeDto(WriteModelName.CreateProject, write, this.api.serverVersion),
         },
         { signal: job.signal },
       ),

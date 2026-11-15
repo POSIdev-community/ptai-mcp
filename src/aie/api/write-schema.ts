@@ -3,15 +3,19 @@ import { Effects } from '../../shared/effects.js';
 import { ErrorCode } from '../../shared/error-codes.js';
 import { ToolError, validation } from '../../shared/errors.js';
 import { contains, isUnsafeObjectKey, type JsonObject, record, revision } from '../../shared/json.js';
-import { schemas } from '../../vendor/aie-v63/contract.js';
+import { schemas as schemas63 } from '../../vendor/aie-v63/contract.js';
+import { schemas as observed63 } from '../../vendor/aie-v63/observed.js';
+import { schemas as schemas64 } from '../../vendor/aie-v64/contract.js';
 import type { WriteModels } from './models.js';
 
 const writeSchemaCompiler = new Ajv({ strict: false, allErrors: true, validateFormats: false });
+const writeSchemas63 = { ...schemas63, ...observed63 };
 
 // Reuse validators for bundled schemas; session identity and credentials stay outside this module.
 const compiledWriteValidators = new Map<string, ValidateFunction>();
 
-export function writeSchema(name: string): JsonObject {
+export function writeSchema(name: string, version?: string): JsonObject {
+  const schemas = schemaDefinitions(version);
   const definitions: JsonObject = {};
 
   function visit(current: string) {
@@ -38,12 +42,13 @@ export function writeSchema(name: string): JsonObject {
   return { $ref: `#/$defs/${name}`, $defs: definitions };
 }
 
-export function validateWrite(name: string, value: unknown) {
-  let validate = compiledWriteValidators.get(name);
+export function validateWrite(name: string, value: unknown, version?: string) {
+  const key = `${version?.startsWith('6.4.') ? '6.4' : '6.3'}:${name}`;
+  let validate = compiledWriteValidators.get(key);
 
   if (!validate) {
-    validate = writeSchemaCompiler.compile(writeSchema(name));
-    compiledWriteValidators.set(name, validate);
+    validate = writeSchemaCompiler.compile(writeSchema(name, version));
+    compiledWriteValidators.set(key, validate);
   }
 
   if (!validate(value)) {
@@ -58,8 +63,12 @@ export function validateWrite(name: string, value: unknown) {
 }
 
 /** Read DTOs can contain server-only fields; project only the allowed write keys. */
-export function writeDto<Name extends keyof WriteModels>(name: Name, value: JsonObject): WriteModels[Name] {
-  validateWrite(name, writable(name, value));
+export function writeDto<Name extends keyof WriteModels>(
+  name: Name,
+  value: JsonObject,
+  version?: string,
+): WriteModels[Name] {
+  validateWrite(name, writable(name, value, version), version);
 
   // The schema validates known fields. Preserve untouched fields from a newer
   // server in the actual payload; they were restored after caller validation.
@@ -67,7 +76,9 @@ export function writeDto<Name extends keyof WriteModels>(name: Name, value: Json
 }
 
 /** Read DTOs can contain server-only fields; project only the allowed write keys. */
-export function writable(name: string, value: JsonObject): JsonObject {
+export function writable(name: string, value: JsonObject, version?: string): JsonObject {
+  const schemas = schemaDefinitions(version);
+
   function projectObject(schema: JsonObject, item: JsonObject, depth: number): JsonObject {
     const properties = schema.properties as JsonObject | undefined;
     const output: JsonObject = {};
@@ -125,13 +136,7 @@ export function writable(name: string, value: JsonObject): JsonObject {
     return item;
   }
 
-  const schema = schemas[name];
-
-  if (!schema?.properties) {
-    throw new ToolError(ErrorCode.SchemaMissing, 'Expected an object write schema.');
-  }
-
-  return record(project(schema, value, 0));
+  return record(project(objectWriteSchema(schemas, name), value, 0));
 }
 
 /** Keep unedited nested fields returned by a newer server. Callers may change
@@ -142,8 +147,11 @@ export function preserveReadExtras(
   original: JsonObject,
   validated: JsonObject,
   changes: JsonObject,
+  version?: string,
 ): JsonObject {
-  return record(restore(schemas[name], original, validated, changes, true));
+  const schemas = schemaDefinitions(version);
+
+  return record(restore(schemas, schemas[name], original, validated, changes, true));
 }
 
 export function verifyRevision(value: unknown, base?: string) {
@@ -169,9 +177,30 @@ export function checkReadback(actual: unknown, expected: unknown) {
   }
 }
 
-function restore(schema: JsonObject, before: unknown, after: unknown, patch: unknown, root = false): unknown {
+function schemaDefinitions(version?: string): Record<string, JsonObject> {
+  return version?.startsWith('6.4.') ? schemas64 : writeSchemas63;
+}
+
+function objectWriteSchema(schemas: Record<string, JsonObject>, name: string): JsonObject {
+  const schema = schemas[name];
+
+  if (!schema?.properties) {
+    throw new ToolError(ErrorCode.SchemaMissing, 'Expected an object write schema.');
+  }
+
+  return schema;
+}
+
+function restore(
+  schemas: Record<string, JsonObject>,
+  schema: JsonObject,
+  before: unknown,
+  after: unknown,
+  patch: unknown,
+  root = false,
+): unknown {
   if (typeof schema.$ref === 'string') {
-    return restore(schemas[schema.$ref.split('/').at(-1)!], before, after, patch, root);
+    return restore(schemas, schemas[schema.$ref.split('/').at(-1)!], before, after, patch, root);
   }
 
   if (Array.isArray(after)) {
@@ -182,10 +211,11 @@ function restore(schema: JsonObject, before: unknown, after: unknown, patch: unk
     return after;
   }
 
-  return restoreObject(schema, before, record(after), patch, root);
+  return restoreObject(schemas, schema, before, record(after), patch, root);
 }
 
 function restoreObject(
+  schemas: Record<string, JsonObject>,
   schema: JsonObject,
   before: unknown,
   after: JsonObject,
@@ -208,7 +238,7 @@ function restoreObject(
 
   for (const [key, value] of Object.entries(output)) {
     if (properties[key] && typeof properties[key] === 'object') {
-      output[key] = restore(properties[key] as JsonObject, prior[key], value, delta[key]);
+      output[key] = restore(schemas, properties[key] as JsonObject, prior[key], value, delta[key]);
     }
   }
 

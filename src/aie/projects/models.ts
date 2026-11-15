@@ -11,6 +11,7 @@ export interface IssueFilters {
   approval_state?: string[];
   issue_type?: string[];
   is_new?: boolean;
+  is_suppressed?: boolean;
   path?: string;
   counter?: number;
 }

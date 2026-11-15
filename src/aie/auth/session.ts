@@ -313,6 +313,7 @@ export class Sessions {
     const origin = serverUrl(shared.EnterpriseApiUri);
     const api = this.apiFactory(origin, shared.AccessToken);
     const version = supportedVersion(await api.json(api.version.apiVersionsPackageCurrentGetRaw({ signal })));
+    api.serverVersion = version;
     const user = await api.json(api.user.apiAuthUsersCurrentGetRaw({ signal }));
 
     if (!user?.id) {

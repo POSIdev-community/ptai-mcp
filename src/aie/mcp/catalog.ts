@@ -116,7 +116,12 @@ export const aieCatalog: Tool[] = [
         description:
           'Forgiving type/CWE-title/component search, e.g. sql injection, Pathname Restricted, lodash. Does not correct spelling.',
       },
-      scan_module: { type: 'array', items: nonEmptyStringSchema },
+      scan_module: {
+        type: 'array',
+        items: nonEmptyStringSchema,
+        description:
+          'Module names, e.g. RaceConditionDetection (6.4), StaticCodeAnalysis, PatternMatching. view=summary lists observed values. Races use issue_type=Vulnerability and type such as Toctou.',
+      },
       file: {
         ...nonEmptyStringSchema,
         description: 'Exact relative file path, slash-normalized and case-insensitive.',
@@ -126,6 +131,7 @@ export const aieCatalog: Tool[] = [
       end_line: { type: 'integer', minimum: 1 },
       view: { type: 'string', enum: Object.values(IssueView), default: IssueView.Items },
       is_new: { type: 'boolean' },
+      is_suppressed: { type: 'boolean', description: 'Exact suppression flag; omitted includes both values.' },
       path: nonEmptyStringSchema,
       counter: { type: 'integer', minimum: 0 },
     },
@@ -135,7 +141,7 @@ export const aieCatalog: Tool[] = [
   defineTool({
     name: AieToolName.GetIssueDetails,
     description:
-      'Read full finding details/evidence/dataflow by known project, scan and issue IDs. Local code or a branch archive may differ from the historical scan; verify the revision before triage.',
+      'Read full finding evidence, including both race paths and sharedData. For reused incremental findings, verifies membership and returns issue_record_scan_id. Source revision remains unverified; check local or downloaded code before triage.',
     properties: issueTargetProperties,
     required: ['project_id', 'scan_id', 'issue_id'],
     readOnly: true,
@@ -189,7 +195,7 @@ export const aieCatalog: Tool[] = [
   defineTool({
     name: AieToolName.GetSources,
     description:
-      'Read current branch source tree or a bounded text file range (default 200 lines, max upstream file 1 MiB, output 64 KiB). scan_id validates context but does not freeze files: content_source=current_branch_sources_or_temp, snapshot_match=unknown. kind=tree is paginated; depth bounds traversal. No local download is required.',
+      'Read current branch source tree or a bounded file range (default 200 lines, upstream 1 MiB, output 64 KiB). Prefer a known scan_id for nested/special paths; some 6.3 branch routes fail. scan_id validates context but does not freeze files: content_source=current_branch_sources_or_temp, snapshot_match=unknown. kind=tree is paginated; depth bounds traversal.',
     properties: {
       ...branchTargetProperties,
       ...paginationProperties,
@@ -214,7 +220,7 @@ export const aieCatalog: Tool[] = [
   defineTool({
     name: AieToolName.GetProjectSettings,
     description:
-      'Read ONE project settings section and its write schema/revision. With scan_id, only section=scan is historical; other sections remain current and say so. include_template reads the policy template.',
+      'Read one settings section, revision and current write schema. scan_id makes only section=scan values historical. In 6.4, scan settings expose searchForRaceConditionsEnabled and raceConditionSettings when available. include_template reads the policy template.',
     properties: {
       ...projectTargetProperties,
       section: settingsSectionSchema,
@@ -282,7 +288,13 @@ export const aieCatalog: Tool[] = [
       'Queue one scan and normally return scan_id/current state in this call, without waiting for analysis completion. Total wait budget 45 seconds, otherwise returns operation_id/known IDs for follow-up. Label defaults MCP or MCP-<label_suffix>; it is descriptive, not unique and does not select modules. scope defaults Incremental. Exact queue mapping and inferred branch_history correlation are distinguished; ambiguous matches remain unconfirmed. Never repeat an accepted/uncertain enqueue automatically.',
     properties: {
       ...branchTargetProperties,
-      scope: { type: 'string', enum: ['Full', 'Incremental'], default: 'Incremental' },
+      scope: {
+        type: 'string',
+        enum: ['Full', 'Incremental'],
+        default: 'Incremental',
+        description:
+          'Modules come from project settings or an uploaded .aiproj.json override. Read historical enabledScanModules to confirm which ran.',
+      },
       label_suffix: {
         type: 'string',
         maxLength: 36,

@@ -17,6 +17,7 @@ import {
 import { Findings } from '../projects/findings.js';
 import { preserveBlackboxSecrets, verifyBlackboxReadback } from './blackbox-credentials.js';
 import { SettingsSection } from './models.js';
+import { assertScanChangesAvailable, availableScanSchema, verifyScanReadback } from './scan-contract.js';
 
 const models: Record<SettingsSection, string> = {
   scan: 'ProjectSettingsUpdateModel',
@@ -48,7 +49,8 @@ export class Settings {
         ? await this.api.json(this.api.configs.apiConfigsSecurityPoliciesTemplateGetRaw())
         : undefined;
 
-    const schema = this.schema(section, model);
+    const current = scanId && section === SettingsSection.Scan ? await this.read(projectId, section) : value;
+    const schema = this.schema(section, model, record(current));
 
     return {
       project_id: projectId,
@@ -56,6 +58,7 @@ export class Settings {
       values: value,
       revision: revision(value),
       write_schema: schema,
+      write_schema_source: 'current_project',
       settings_source: scanId && section === SettingsSection.Scan ? 'historical_scan' : 'current_project',
       scan_id: scanId,
       scope: 'project',
@@ -208,8 +211,8 @@ export class Settings {
     return value;
   }
 
-  private schema(section: SettingsSection, model: string) {
-    const schema = writeSchema(model);
+  private schema(section: SettingsSection, model: string, current: JsonObject) {
+    const schema = writeSchema(model, this.api.serverVersion);
 
     if (section === SettingsSection.Policies) {
       const policy = record(record(schema.$defs).SecurityPoliciesModel);
@@ -221,13 +224,17 @@ export class Settings {
       policy.required = ['securityPolicies'];
     }
 
-    return schema;
+    return section === SettingsSection.Scan ? availableScanSchema(schema, current) : schema;
   }
 
   private prepareUpdate(section: SettingsSection, model: string, current: JsonObject, changes: JsonObject): JsonObject {
-    const allowed = writable(model, current);
+    if (section === SettingsSection.Scan) {
+      assertScanChangesAvailable(current, changes, writeSchema(model, this.api.serverVersion));
+    }
+
+    const allowed = writable(model, current, this.api.serverVersion);
     const value = record(merge(allowed, changes));
-    validateWrite(model, value);
+    validateWrite(model, value, this.api.serverVersion);
 
     if (
       section === SettingsSection.Policies &&
@@ -244,7 +251,7 @@ export class Settings {
       );
     }
 
-    const writeValue = preserveReadExtras(model, current, value, changes);
+    const writeValue = preserveReadExtras(model, current, value, changes, this.api.serverVersion);
 
     if (section === SettingsSection.Blackbox) {
       preserveBlackboxSecrets(writeValue, changes);
@@ -259,6 +266,8 @@ export class Settings {
 
     if (section === SettingsSection.Blackbox) {
       blackboxVerification = verifyBlackboxReadback(saved, changes);
+    } else if (section === SettingsSection.Scan) {
+      verifyScanReadback(saved, changes);
     } else if (
       section === SettingsSection.Policies &&
       typeof changes.securityPolicies === 'string' &&
