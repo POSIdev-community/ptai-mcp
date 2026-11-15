@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import yazl from 'yazl';
-import { SourceReader, sourcesReady } from '../../../src/aie/sources/source-reader.js';
+import { sourcePath, SourceReader, sourcesReady } from '../../../src/aie/sources/source-reader.js';
 import { LIMITS } from '../../../src/shared/limits.js';
 import { AieFixture, ids } from '../../fixtures/aie-server.js';
 
@@ -38,14 +38,8 @@ function fallback(archive: Buffer, length?: number) {
 describe('bounded archive source reads', () => {
   it('preserves exact Unicode names for direct file API requests', async () => {
     const server = new AieFixture();
-    const request = server.request;
-    server.request = async (url, init) => {
-      const pathname = decodeURIComponent(new URL(String(url)).pathname);
-      if (pathname.includes('/fileContent/')) {
-        return new Response(pathname.endsWith('/e\u0301.js') ? 'NFD file' : 'different NFC file');
-      }
-      return request(url, init);
-    };
+    server.sourceFiles.set('e\u0301.js', 'NFD file');
+    server.sourceFiles.set('é.js', 'different NFC file');
     const reader = new SourceReader(server.api());
     expect(await reader.file({ ...target, kind: 'file', path: 'e\u0301.js' })).toMatchObject({ content: 'NFD file' });
   });
@@ -110,6 +104,156 @@ describe('bounded archive source reads', () => {
     server.hasSources = false;
     await expect(sourcesReady(server.api(), ids.project, ids.branch)).rejects.toMatchObject({
       code: 'AIE_SOURCES_NOT_READY',
+    });
+  });
+});
+
+describe('AIE source path routing', () => {
+  it.each([undefined, ids.scan])(
+    'reads nested paths with scan context %s without decoding a complete URL',
+    async (scan_id) => {
+      const server = new AieFixture();
+      const reader = new SourceReader(server.api());
+      for (const file of [
+        'core/appHandler.js',
+        'routes/app.js',
+        'папка %/имя с пробелом.js',
+        'src/literal%2Fname.js',
+        'src/a#b?.js',
+      ]) {
+        server.sourceFiles.set(file, `source: ${file}`);
+        expect(await reader.file({ ...target, scan_id, kind: 'file', path: `./${file}` })).toMatchObject({
+          path: file,
+          content: `source: ${file}`,
+          content_source: 'current_branch_sources_or_temp',
+          snapshot_match: 'unknown',
+        });
+      }
+      const files = server.calls.filter((call) => call.path.includes('/fileContent/'));
+      expect(files).toHaveLength(5);
+      expect(files.every((call) => (scan_id ? call.path.endsWith('/VfsNode') : call.path.includes('\\')))).toBe(true);
+      expect(server.calls.some((call) => call.path.endsWith('/sources'))).toBe(false);
+    },
+  );
+
+  it('models encoded slashes as a literal route value rather than a nested filename', async () => {
+    const server = new AieFixture();
+    server.sourceFiles.set('core/appHandler.js', 'nested source');
+    const api = server.api();
+    await expect(
+      api.response(
+        api.files.apiFileContentProjectIdBranchesBranchIdFileGetRaw({
+          projectId: ids.project,
+          branchId: ids.branch,
+          file: 'core/appHandler.js',
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'AIE_SERVER_ERROR' });
+    expect(server.calls.at(-1)?.path).toContain('core%2FappHandler.js');
+  });
+
+  it('normalizes dot and Windows separators for nested directory and file requests', async () => {
+    const server = new AieFixture();
+    server.sourceFiles.set('папка %/deep/app.js', 'nested source');
+    const reader = new SourceReader(server.api());
+    expect(await reader.tree({ ...target, kind: 'tree', path: './папка %\\deep/', depth: 2 })).toMatchObject({
+      items: [{ path: 'папка %/deep/app.js', kind: 'file' }],
+      metadata: { fetch_source: 'directory_or_file_api' },
+    });
+    expect(await reader.file({ ...target, kind: 'file', path: '.\\папка %\\deep\\app.js' })).toMatchObject({
+      content: 'nested source',
+      path: 'папка %/deep/app.js',
+    });
+    expect(server.calls.some((call) => call.path.includes('папка %\\deep'))).toBe(true);
+  });
+
+  it.each(['../server.js', './core/../server.js', '/etc/passwd', '\\\\server\\share', 'C:\\file.js', 'core/\0.js'])(
+    'rejects unsafe source paths: %s',
+    (path) => {
+      expect(() => sourcePath(path)).toThrow('relative');
+    },
+  );
+
+  it('checks that an explicit scan belongs to the selected branch before fetching a file', async () => {
+    const server = new AieFixture();
+    server.scans.get(ids.scan)!.branchId = ids.agent;
+    await expect(
+      new SourceReader(server.api()).file({ ...target, scan_id: ids.scan, kind: 'file', path: 'main.js' }),
+    ).rejects.toMatchObject({ code: 'AIE_TARGET_MISMATCH' });
+    expect(server.calls.some((call) => call.path.includes('/fileContent/'))).toBe(false);
+  });
+
+  it.each([403, 500])('does not mask HTTP %s with archive fallback', async (status) => {
+    for (const scan_id of [undefined, ids.scan]) {
+      const server = new AieFixture();
+      const path = scan_id
+        ? `/api/fileContent/${ids.project}/scanResults/${ids.scan}/VfsNode`
+        : `/api/fileContent/${ids.project}/branches/${ids.branch}/core\\app.js`;
+      server.faults.set(`GET ${path}`, { status, body: {} });
+      await expect(
+        new SourceReader(server.api()).file({ ...target, scan_id, kind: 'file', path: 'core/app.js' }),
+      ).rejects.toMatchObject({ details: { http_status: status } });
+      expect(server.calls.some((call) => call.path.endsWith('/sources'))).toBe(false);
+    }
+  });
+
+  it.each([403, 500])('does not mask nested directory HTTP %s with archive fallback', async (status) => {
+    const server = new AieFixture();
+    server.faults.set(`GET /api/directoryContent/${ids.project}/branches/${ids.branch}/core\\nested`, {
+      status,
+      body: {},
+    });
+    await expect(
+      new SourceReader(server.api()).tree({ ...target, kind: 'tree', path: './core/nested' }),
+    ).rejects.toMatchObject({ details: { http_status: status } });
+    expect(server.calls.some((call) => call.path.endsWith('/sources'))).toBe(false);
+  });
+
+  it.each(['missing.js', 'core/missing.js'])('preserves the server missing-file error for %s', async (file) => {
+    const server = new AieFixture();
+    for (const scan_id of [undefined, ids.scan]) {
+      await expect(
+        new SourceReader(server.api()).file({ ...target, scan_id, kind: 'file', path: file }),
+      ).rejects.toMatchObject({ details: { http_status: 500 } });
+    }
+    expect(server.calls.some((call) => call.path.endsWith('/sources'))).toBe(false);
+  });
+
+  it('keeps normalized nested paths when falling back from an unavailable directory API', async () => {
+    const reader = fallback(await zipBytes([['core/nested/app.js', Buffer.from('nested source')]]));
+    expect(await reader.tree({ ...target, kind: 'tree', path: './core\\nested/' })).toMatchObject({
+      items: [{ path: 'core/nested/app.js', kind: 'file' }],
+      metadata: { fetch_source: 'branch_archive_fallback' },
+    });
+  });
+
+  it('keeps archive fallback when the scan-context file endpoint is unsupported', async () => {
+    const server = new AieFixture();
+    server.faults.set(`GET /api/fileContent/${ids.project}/scanResults/${ids.scan}/VfsNode`, { status: 404 });
+    expect(
+      await new SourceReader(server.api()).file({ ...target, scan_id: ids.scan, kind: 'file', path: './main.js' }),
+    ).toMatchObject({ content: 'synthetic source', fetch_source: 'branch_archive_fallback', path: 'main.js' });
+  });
+
+  it.each([undefined, ids.scan])('preserves line and byte limits with scan context %s', async (scan_id) => {
+    const server = new AieFixture();
+    const file = 'core/large.js';
+    const reader = new SourceReader(server.api());
+    server.sourceFiles.set(file, Array.from({ length: 250 }, (_, line) => `line ${line + 1}`).join('\n'));
+    expect(await reader.file({ ...target, scan_id, kind: 'file', path: file })).toMatchObject({
+      returned_lines: 200,
+      end_line: 200,
+      total_lines: 250,
+      truncated: true,
+    });
+    server.sourceFiles.set(file, `first\n${'é'.repeat(LIMITS.sourceResponseBytes)}\nlast`);
+    const selected = await reader.file({ ...target, scan_id, kind: 'file', path: file, start_line: 2, end_line: 2 });
+    expect(selected).toMatchObject({ start_line: 2, end_line: 2, returned_lines: 1, total_lines: 3, truncated: true });
+    expect(Buffer.byteLength(selected.content)).toBeLessThanOrEqual(LIMITS.sourceResponseBytes);
+    expect(selected.content).not.toContain('\ufffd');
+    server.sourceFiles.set(file, new Uint8Array(LIMITS.sourceReadBytes + 1));
+    await expect(reader.file({ ...target, scan_id, kind: 'file', path: file })).rejects.toMatchObject({
+      code: 'AIE_UPSTREAM_LIMIT',
     });
   });
 });

@@ -493,7 +493,7 @@ describe('background source workflows and control calls', () => {
       const response = await f.call(name, args);
       expect(response.isError, name).not.toBe(true);
       const job = await terminal(f.dispatcher, String(response.structuredContent!.operation_id));
-      expect(job, name).toMatchObject({ state: 'succeeded', effects: 'applied' });
+      expect(job, `${name}: ${JSON.stringify(job.error)}`).toMatchObject({ state: 'succeeded', effects: 'applied' });
       expect((await f.call('aie_get_operation', { operation_id: job.operation_id })).structuredContent).toMatchObject({
         state: job.state,
         result: job.result,

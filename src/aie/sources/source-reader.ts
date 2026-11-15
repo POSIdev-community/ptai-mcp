@@ -7,6 +7,7 @@ import { boundedBody } from '../api/body.js';
 import type { AieApi } from '../api/client.js';
 import { Findings } from '../projects/findings.js';
 import { archiveFile, archiveTree, type DirectoryRead, SourceFetch } from './archive-reader.js';
+import { directoryContent } from './directory-content.js';
 
 export const SourceKind = { Tree: 'tree', File: 'file' } as const;
 export interface SourceRequest {
@@ -27,12 +28,15 @@ export function sourcePath(value = ''): string {
     path.startsWith('/') ||
     path.includes(':') ||
     path.includes(String.fromCharCode(0)) ||
-    path.split('/').some((part) => part === '..' || part === '.')
+    path.split('/').some((part) => part === '..')
   ) {
     validation('Source path must be relative and must not contain parent segments.');
   }
 
-  return path;
+  return path
+    .split('/')
+    .filter((part) => part && part !== '.')
+    .join('/');
 }
 
 export async function readDirectory(
@@ -45,11 +49,13 @@ export async function readDirectory(
   const target = { projectId, branchId, depth };
 
   try {
-    return await api.json(
+    const tree: unknown = await api.json(
       path
-        ? api.directories.apiDirectoryContentProjectIdBranchesBranchIdPathGetRaw({ ...target, path })
+        ? api.directories.apiDirectoryContentProjectIdBranchesBranchIdPathGetRaw({ ...target, path: branchPath(path) })
         : api.directories.apiDirectoryContentProjectIdBranchesBranchIdGetRaw(target),
     );
+
+    return directoryContent(tree);
   } catch (error) {
     if (!(error instanceof ToolError) || error.code !== ErrorCode.NotFound) {
       throw error;
@@ -75,9 +81,11 @@ export async function sourcesReady(api: AieApi, projectId: string, branchId: str
 
   try {
     // Readiness must not download an entire archive on older AIE releases.
-    const tree = await api.json(
+    const response: unknown = await api.json(
       api.directories.apiDirectoryContentProjectIdBranchesBranchIdGetRaw({ projectId, branchId, depth: 1 }),
     );
+
+    const tree = directoryContent(response);
 
     if (!tree._files?.length && !tree._directories?.length) {
       throw new ToolError(ErrorCode.SourcesNotReady, 'The selected branch source target is empty.', {
@@ -174,11 +182,17 @@ export class SourceReader {
   private async loadFile(request: SourceRequest, file: string) {
     try {
       const response = await this.api.response(
-        this.api.files.apiFileContentProjectIdBranchesBranchIdFileGetRaw({
-          projectId: request.project_id,
-          branchId: request.branch_id,
-          file,
-        }),
+        request.scan_id
+          ? this.api.files.apiFileContentProjectIdScanResultsScanResultIdVfsNodeGetRaw({
+              projectId: request.project_id,
+              scanResultId: request.scan_id,
+              nodePath: file,
+            })
+          : this.api.files.apiFileContentProjectIdBranchesBranchIdFileGetRaw({
+              projectId: request.project_id,
+              branchId: request.branch_id,
+              file: branchPath(file),
+            }),
       );
 
       return { body: await boundedBody(response, LIMITS.sourceReadBytes), fetch_source: SourceFetch.Direct };
@@ -193,6 +207,12 @@ export class SourceReader {
       };
     }
   }
+}
+
+function branchPath(path: string): string {
+  // AIE's single route parameter preserves encoded slashes but decodes backslashes.
+  // Keep the generated client: it still escapes Unicode, percent signs and spaces once.
+  return path.replace(/\//g, '\\');
 }
 
 function sourceOrigin(request: SourceRequest) {

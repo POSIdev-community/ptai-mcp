@@ -66,12 +66,48 @@ function preserveFixtureSecrets(prior: JsonObject, nextSettings: JsonObject): vo
   }
 }
 
+function routePathname(pathname: string): string {
+  // ASP.NET route parameters retain %2F. Decoding the complete URL hid this interop bug.
+  return pathname
+    .split('/')
+    .map((segment) => decodeURIComponent(segment.replace(/%2f/gi, (encoded) => `%25${encoded.slice(1)}`)))
+    .join('/');
+}
+
+function sourceDirectory(files: ReadonlyMap<string, string | Uint8Array>, path: string, depth: number): JsonObject {
+  const prefix = path ? `${path}/` : '';
+  const relative = [...files.keys()].filter((file) => file.startsWith(prefix)).map((file) => file.slice(prefix.length));
+  const directories = [...new Set(relative.filter((file) => file.includes('/')).map((file) => file.split('/')[0]))];
+  return {
+    name: path.split('/').at(-1) ?? 'sources',
+    _files: relative.filter((file) => file && !file.includes('/')),
+    _directories: directories.map((name) =>
+      depth > 1
+        ? sourceDirectory(files, prefix + name, depth - 1)
+        : { name, _hasContent: true, _files: [], _directories: [] },
+    ),
+    _hasContent: relative.length > 0,
+  };
+}
+
+function currentDirectoryContent(tree: JsonObject): JsonObject {
+  return {
+    name: tree.name,
+    directories: (tree._directories as JsonObject[]).map(currentDirectoryContent),
+    fileNames: tree._files,
+    hasContent: tree._hasContent,
+  };
+}
+
 /** Small independent HTTP contract fixture. Production services use the actual
  * generated client against these routes; no domain methods are mocked out. */
 export class AieFixture {
 
   public readonly calls: Array<{ method: string; path: string; body: unknown; authorization: string | null }> = [];
   public readonly faults = new Map<string, { status: number; body?: unknown }>();
+  public readonly sourceFiles = new Map<string, string | Uint8Array>([
+    ['main.js', 'first line\nsecond line\nthird line'],
+  ]);
   public readonly settings: Record<string, JsonObject> = {
     settings: {
       projectName: 'fixture',
@@ -138,6 +174,7 @@ export class AieFixture {
   };
   public sourceDate = '2026-11-10T12:00:00Z';
   public hasSources = true;
+  public currentDirectoryFormat = false;
   public issues?: JsonObject[];
   public readonly titles = new Map<string, string>();
   public queueMode: 'queued' | 'assigned' | 'running' | 'missing' = 'queued';
@@ -159,7 +196,7 @@ export class AieFixture {
   public request: typeof fetch = async (input, init = {}) => {
     const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url);
     const method = init.method ?? 'GET';
-    const pathname = decodeURIComponent(url.pathname);
+    const pathname = routePathname(url.pathname);
     const body = typeof init.body === 'string' ? (JSON.parse(init.body) as unknown) : undefined;
     this.calls.push({
       method,
@@ -213,15 +250,21 @@ export class AieFixture {
       return json({ scanTargetName: this.hasSources ? 'sources' : null, localSourceType: 'Directory' });
     }
     if (pathname.startsWith(`/api/directoryContent/${ids.project}/branches/${ids.branch}`)) {
-      return json({
-        name: 'sources',
-        _files: this.hasSources ? ['main.js'] : [],
-        _directories: [],
-        _hasContent: this.hasSources,
-      });
+      const prefix = `/api/directoryContent/${ids.project}/branches/${ids.branch}`;
+      const path = pathname.slice(prefix.length).replace(/^\//, '').replace(/\\/g, '/');
+      const tree = sourceDirectory(
+        this.hasSources ? this.sourceFiles : new Map(),
+        path,
+        Number(url.searchParams.get('depth') ?? 1),
+      );
+      return json(this.currentDirectoryFormat ? currentDirectoryContent(tree) : tree);
     }
     if (pathname.startsWith(`/api/fileContent/${ids.project}/branches/${ids.branch}/`)) {
-      return new Response('first line\nsecond line\nthird line', { headers: { 'Content-Type': 'text/plain' } });
+      const file = pathname.slice(`/api/fileContent/${ids.project}/branches/${ids.branch}/`.length).replace(/\\/g, '/');
+      return this.sourceFile(file);
+    }
+    if (pathname === `/api/fileContent/${ids.project}/scanResults/${ids.scan}/VfsNode`) {
+      return this.sourceFile((url.searchParams.get('nodePath') ?? '').replace(/^\.\//, ''));
     }
     if (pathname === `/api/branches/${ids.branch}/scanResults/last`) {
       return json([...this.scans.values()].at(-1));
@@ -464,4 +507,13 @@ export class AieFixture {
     }
     throw new Error(`Fixture route not implemented: ${method} ${pathname}`);
   };
+
+  private sourceFile(file: string): Response {
+    const content = this.sourceFiles.get(file);
+    // Match AIE 6.4's current missing-file error instead of silently returning a fixture file.
+    if (content === undefined) {
+      return json({}, 500);
+    }
+    return new Response(typeof content === 'string' ? content : new Uint8Array(content));
+  }
 }
