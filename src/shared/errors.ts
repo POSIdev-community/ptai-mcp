@@ -1,5 +1,6 @@
 import { Effects } from './effects.js';
 import { ErrorCode } from './error-codes.js';
+import type { JsonObject } from './json.js';
 
 export class ToolError extends Error {
 
@@ -17,6 +18,7 @@ export class ToolError extends Error {
       failed_check?: string;
       expected?: unknown;
       actual?: unknown;
+      tls?: JsonObject;
     } = {},
   ) {
     super(message);

@@ -6,6 +6,7 @@ import { ApiErrorType } from '../../vendor/aie-v63/src/models/index.js';
 import { FetchError } from '../../vendor/aie-v63/src/runtime.js';
 import { schemas as schemas64 } from '../../vendor/aie-v64/contract.js';
 import { boundedBody } from './body.js';
+import { tlsError } from './tls-diagnostics.js';
 
 const knownServerCodes = new Set<string>([
   ...Object.values(ApiErrorType),
@@ -23,13 +24,19 @@ const statusCodes = new Map<number, ErrorCode>([
   [429, ErrorCode.RateLimited],
 ]);
 
-export function networkError(error: unknown, changing: boolean): ToolError {
+export function networkError(error: unknown, changing: boolean, origin?: string): ToolError {
   if (error instanceof ToolError) {
     return error;
   }
 
   if (error instanceof FetchError) {
-    return networkError(error.cause, changing);
+    return networkError(error.cause, changing, origin);
+  }
+
+  const tls = tlsError(error, changing, origin);
+
+  if (tls) {
+    return tls;
   }
 
   const failure = networkFailure(error);
@@ -60,23 +67,6 @@ export async function httpError(response: Response, changing: boolean): Promise<
 
 function networkFailure(error: unknown): Failure {
   const cause = error instanceof Error ? error : undefined;
-  let code: unknown;
-
-  if (cause && 'code' in cause) {
-    code = cause.code;
-  } else if (cause?.cause && typeof cause.cause === 'object' && 'code' in cause.cause) {
-    code = cause.cause.code;
-  }
-
-  if (
-    typeof code === 'string' &&
-    /CERT|TLS|SSL|UNABLE_TO_VERIFY|UNABLE_TO_GET_ISSUER|DEPTH_ZERO_SELF_SIGNED/.test(code)
-  ) {
-    return {
-      code: ErrorCode.TlsError,
-      message: 'TLS certificate verification failed. Configure a trusted CA for the Node transport.',
-    };
-  }
 
   if (cause?.name === 'TimeoutError') {
     return { code: ErrorCode.Timeout, message: 'The AIE request timed out.' };

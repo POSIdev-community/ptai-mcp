@@ -137,7 +137,7 @@ export class AieApi {
         throw error;
       }
 
-      throw networkError(error, changing);
+      throw networkError(error, changing, this.origin);
     }
   }
 
@@ -146,7 +146,7 @@ export class AieApi {
       return (await call).raw;
     } catch (error) {
       if (error instanceof FetchError) {
-        throw networkError(error, false);
+        throw networkError(error, false, this.origin);
       }
 
       throw error;
@@ -159,7 +159,7 @@ export class AieApi {
       await response.body?.cancel().catch(() => undefined);
     } catch (error) {
       if (error instanceof FetchError) {
-        throw networkError(error, true);
+        throw networkError(error, true, this.origin);
       }
 
       throw error;
@@ -186,7 +186,7 @@ export class AieApi {
 
       return response;
     } catch (error) {
-      throw networkError(error, changing);
+      throw networkError(error, changing, this.origin);
     }
   }
 

@@ -12,7 +12,15 @@ import { serverUrl } from '../api/server-url.js';
 import { supportedVersion } from '../api/version.js';
 import { AieToolName } from '../tool-names.js';
 import { LoginAttempt } from './login-attempt.js';
-import { AuthAction, type AuthArguments, type ConnectedSession, SessionAction, type SharedSession } from './models.js';
+import {
+  AuthAction,
+  type AuthArguments,
+  type ConnectedSession,
+  ContextScope,
+  LoginState,
+  SessionAction,
+  type SharedSession,
+} from './models.js';
 import { sessionFingerprint } from './session-codec.js';
 import { SessionStorage } from './session-storage.js';
 
@@ -115,30 +123,11 @@ export class Sessions {
       );
     }
 
-    let connected: ConnectedSession | undefined;
-    let error: ReturnType<typeof safeError> | undefined;
-
-    try {
-      connected = await this.require();
-    } catch (cause) {
-      error = safeError(cause, AieToolName.GetContext);
+    if (loginId && this.attempt) {
+      return this.loginContext(this.attempt);
     }
 
-    const known = connected?.server_url ?? (await this.storage.read().catch(() => null))?.EnterpriseApiUri;
-
-    return {
-      connected: !!connected,
-      server_url: known,
-      user: connected?.user,
-      version: connected?.version,
-      permissions: connected?.permissions,
-      permissions_complete: connected?.permissions_complete,
-      permissions_error: connected?.permissions_error,
-      permissions_advisory: true,
-      storage_warning: this.watchWarning,
-      login: this.attempt?.view(),
-      error,
-    };
+    return this.sessionContext();
   }
 
   public async auth(args: AuthArguments): Promise<Record<string, unknown>> {
@@ -188,6 +177,64 @@ export class Sessions {
       void this.observe().catch(() => undefined);
     }, 75);
     this.watchTimer.unref();
+  }
+
+  private async loginContext(attempt: LoginAttempt): Promise<Record<string, unknown>> {
+    const login = attempt.view();
+
+    if (login.state === LoginState.Connected) {
+      const context = await this.sessionContext();
+
+      if (context.server_url !== attempt.origin) {
+        throw new ToolError(
+          ErrorCode.ContextChanged,
+          'The shared session changed after this login completed. Read aie_get_context without login_id.',
+        );
+      }
+
+      return { ...context, context_scope: ContextScope.LoginAttempt };
+    }
+
+    const shared = await this.storage.read().catch(() => null);
+
+    return {
+      context_scope: ContextScope.LoginAttempt,
+      connected: false,
+      server_url: attempt.origin,
+      login,
+      storage_warning: this.watchWarning,
+      current_session: shared
+        ? { server_url: serverUrl(shared.EnterpriseApiUri), validation: 'not_checked' }
+        : undefined,
+    };
+  }
+
+  private async sessionContext(): Promise<Record<string, unknown>> {
+    let connected: ConnectedSession | undefined;
+    let error: ReturnType<typeof safeError> | undefined;
+
+    try {
+      connected = await this.require();
+    } catch (cause) {
+      error = safeError(cause, AieToolName.GetContext);
+    }
+
+    const known = connected?.server_url ?? (await this.storage.read().catch(() => null))?.EnterpriseApiUri;
+
+    return {
+      context_scope: ContextScope.Session,
+      connected: !!connected,
+      server_url: known,
+      user: connected?.user,
+      version: connected?.version,
+      permissions: connected?.permissions,
+      permissions_complete: connected?.permissions_complete,
+      permissions_error: connected?.permissions_error,
+      permissions_advisory: true,
+      storage_warning: this.watchWarning,
+      login: this.attempt?.view(),
+      error,
+    };
   }
 
   private cancelLogin(loginId?: string) {

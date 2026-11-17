@@ -9,6 +9,7 @@ export const LoginState = {
   Failed: 'failed',
 } as const;
 export type LoginState = (typeof LoginState)[keyof typeof LoginState];
+export const ContextScope = { Session: 'session', LoginAttempt: 'login_attempt' } as const;
 export const AuthAction = { Login: 'login', Logout: 'logout', CancelLogin: 'cancel_login' } as const;
 export type AuthAction = (typeof AuthAction)[keyof typeof AuthAction];
 export const LoginPage = { Manual: 'manual', Success: 'success' } as const;
