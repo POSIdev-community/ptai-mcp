@@ -1,21 +1,19 @@
 # Releasing `@posidev-community/ptai-mcp`
 
-This document describes how to publish a new npm package version, create the
-corresponding GitHub release, and publish the same version to the Official MCP
-Registry.
+Publish the npm package, create its GitHub release and publish the same version
+to the Official MCP Registry.
 
 ## Release identities
 
-The project has two related but different public identifiers:
+Use these publication identifiers:
 
 | Surface               | Identifier                             |
 | --------------------- | -------------------------------------- |
 | npm package           | `@posidev-community/ptai-mcp`          |
 | Official MCP Registry | `io.github.POSIdev-community/ptai-mcp` |
 
-The capitalization of `POSIdev-community` in the MCP Registry name is
-significant. It must exactly match the GitHub organization name and the value
-authorized by the Registry.
+Match the `POSIdev-community` capitalization in the MCP Registry name to the
+GitHub organization name and the value authorized by the Registry.
 
 `package.json` is the source of truth for the package name, version, and MCP
 Registry name. The `npm run metadata:sync` command copies those values into
@@ -23,9 +21,9 @@ Registry name. The `npm run metadata:sync` command copies those values into
 
 ## Prerequisites
 
-Before starting, verify that you have:
+Required:
 
-- Node.js 18 or newer and npm;
+- Node.js 18.19.x, or Node.js 20.6 or newer, and npm;
 - publish access to the `posidev-community` npm organization;
 - GitHub permission to push and create releases in
   `POSIdev-community/ptai-mcp`;
@@ -48,10 +46,10 @@ git status --short
 npm ci
 ```
 
-Choose the new semantic version. The examples below use `1.0.3`:
+Choose the new semantic version. The examples below use `1.1.0`:
 
 ```powershell
-$releaseVersion = "1.0.3"
+$releaseVersion = "1.1.0"
 npm version $releaseVersion --no-git-tag-version
 npm run metadata:sync
 ```
@@ -80,10 +78,45 @@ npm run metadata:check
 
 ## 2. Verify the package
 
+The AIE POC can be reviewed locally without pushing, publishing, installing a new
+BE4P bundle or supplying production telemetry credentials. The default build
+writes a disabled `dist/telemetry-config.json`. For an eventual release build,
+set `PTAI_RELEASE_BUILD=true` together with `PTAI_FLUS_HOST` and `PTAI_FLUS_TOKEN`
+from the existing BE4P release configuration, then build and inspect the artifact.
+`scripts/write-flus-config.mjs` writes the actual
+`dist/telemetry-config.json` from the environment at build time.
+The release flag fails the build when either required value is absent.
+`PTAI_FLUS_ENVIRONMENT=test` selects the test contour; the default is production.
+Do not commit the generated configuration or real tokens. The npm artifact must
+contain the generated configuration. A release still needs a real FLUS-to-Datalake
+verification; a mocked protobuf receiver does not establish that result.
+Because the npm artifact is public, confirm that its FLUS push token is approved
+for distribution to package consumers. Otherwise change the release configuration
+to provide a token at runtime before publishing.
+Before release, verify FLUS delivery through downstream analytics, wire release
+CI secrets and check the native macOS/Windows/Linux installation and IDE session
+matrix. Packaged Windows MCP clients may redirect AppData to LocalCache, so
+session sharing with an IDE must be verified in the actual release environment.
+
+Complete the platform/acceptance matrix before public delivery. Pair the configured
+installer bundle version 3.0.1.1505 with the release candidate.
+Do not turn the optional BE4P shared-session patch into a POC installation
+requirement without a separate owner decision.
+
+The pinned SDK 1.32.2 is a build dependency: tsup includes the stdio modules in
+the CLI without installing its unused HTTP adapter in consumer environments.
+Keep that composition when supporting Node 18. The build writes a component
+manifest and complete licenses into `dist`. Run `npm run audit:runtime` after
+building: it audits both installed runtime dependencies and compiled components,
+even when npm marks the original SDK dependency as dev. Full dev audit still
+has separately reported advisories. Engine-strict clean installation is part
+of artifact smoke.
+
 Run the complete verification and inspect the publishable artifact:
 
 ```powershell
 npm run verify
+npm run audit:runtime
 npm pack --dry-run
 npm run smoke:artifact
 ```
@@ -126,15 +159,16 @@ If necessary, authenticate:
 npm login
 ```
 
-Publish the scoped package publicly:
+Publish the verified archive produced by the release-configured build. This
+preserves its telemetry configuration without rebuilding from your current shell:
 
 ```powershell
-npm publish --access public
+$artifact = "C:\path\to\posidev-community-ptai-mcp-1.1.0.tgz"
+npm publish $artifact --access public --tag latest --registry=https://registry.npmjs.org
 ```
 
-An npm version cannot be overwritten. If publishing succeeds and a correction
-is needed, prepare a new patch version instead of trying to republish the same
-version.
+After publishing, corrections require a new patch version: npm does not allow
+overwriting a published version.
 
 Verify the publication:
 
@@ -234,9 +268,8 @@ revoke it and create a replacement before continuing.
 
 ## 8. Publish the new version to the Official MCP Registry
 
-Every npm release that should be discoverable as the current MCP version must
-also be published to the Registry. npm publication does not update the Registry
-automatically.
+Publish each discoverable release to the MCP Registry after publishing it to npm.
+These are separate publication steps.
 
 Validate and publish the synchronized `server.json`:
 
@@ -253,9 +286,8 @@ Successfully published
 Server io.github.POSIdev-community/ptai-mcp version <VERSION>
 ```
 
-Publishing a new version does not remove the previous versions. The newest
-active version is marked as `isLatest: true` by the Registry. There is normally
-no need to deprecate the previous version.
+The Registry keeps previous versions and marks the newest active version as
+`isLatest: true`. Older versions normally do not need deprecation.
 
 Verify the Registry entry:
 
@@ -300,8 +332,7 @@ isLatest: true
 
 ## Future automation
 
-The manual Registry step can be automated in GitHub Actions with GitHub OIDC.
-When adding automation, use a release-tag workflow, grant only
+For GitHub Actions automation, use GitHub OIDC and a release-tag workflow. Grant only
 `id-token: write` and `contents: read`, and publish npm before publishing the
 corresponding Registry metadata.
 

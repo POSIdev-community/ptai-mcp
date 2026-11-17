@@ -1,15 +1,15 @@
-import fs from 'node:fs/promises';
 import syncFs from 'node:fs';
+import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  getBackendPath,
   getBundleDir,
   getBundleExtension,
-  getBackendPath,
   getExpectedBundleVersion,
-  readPackageConfig,
   getProxyPath,
+  readPackageConfig,
   readVersionsJson,
 } from '../src/utils/paths.js';
 
@@ -105,7 +105,9 @@ describe('bundle paths', () => {
     // Arrange
     const exists = vi.spyOn(syncFs, 'existsSync').mockReturnValue(true);
     const read = vi.spyOn(syncFs, 'readFileSync').mockImplementation((file) => {
-      if (String(file).endsWith(`${path.sep}src${path.sep}package.json`)) return '{bad';
+      if (String(file).endsWith(`${path.sep}src${path.sep}package.json`)) {
+        return '{bad';
+      }
       return JSON.stringify({ config: { bundleVersion: 'x' } });
     });
 

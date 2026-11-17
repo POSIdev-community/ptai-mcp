@@ -3,11 +3,12 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
+import { NodeErrorCode } from '../shared/io-constants.js';
+import { Platform } from '../utils/platform-constants.js';
 import { MCP_PACKAGE_NAME } from './launch.js';
 import { getRulesContent } from './rules.js';
 
 const execFileAsync = promisify(execFile);
-type CommandRunner = (file: string, args: readonly string[]) => Promise<unknown>;
 
 export const CUSTOM_AGENT_ID = '__custom_agent__';
 
@@ -18,24 +19,30 @@ export function getCustomAgentGuidePath(): string {
 export async function writeCustomAgentGuide(guidePath = getCustomAgentGuidePath()): Promise<string> {
   await fs.mkdir(path.dirname(guidePath), { recursive: true });
   await fs.writeFile(guidePath, customAgentGuide(), 'utf8');
+
   return guidePath;
 }
 
 export async function removeCustomAgentGuide(guidePath = getCustomAgentGuidePath()): Promise<boolean> {
   try {
     await fs.unlink(guidePath);
+
     return true;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return false;
+    if ((error as NodeJS.ErrnoException).code === NodeErrorCode.NotFound) {
+      return false;
+    }
+
     throw error;
   }
 }
 
 export async function openCustomAgentGuide(run: CommandRunner = execFileAsync): Promise<void> {
   const guidePath = getCustomAgentGuidePath();
-  if (process.platform === 'win32') {
+
+  if (process.platform === Platform.Windows) {
     await run('rundll32.exe', ['url.dll,FileProtocolHandler', guidePath]);
-  } else if (process.platform === 'darwin') {
+  } else if (process.platform === Platform.MacOS) {
     await run('open', [guidePath]);
   } else {
     await run('xdg-open', [guidePath]);
@@ -95,3 +102,5 @@ Add the following rules to the agent's global instruction file:
 ${getRulesContent()}
 `;
 }
+
+type CommandRunner = (file: string, args: readonly string[]) => Promise<unknown>;

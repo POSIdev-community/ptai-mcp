@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="{{lang}}">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{{title}}</title>
+    <link rel="stylesheet" href="./login.css" />
+  </head>
+  <body>
+    <main class="root">
+      <div class="pt-logo">{{logo}}</div>
+      <h1 id="heading" data-success-label="{{success}}">{{heading}}</h1>
+      <p
+        id="status"
+        data-waiting="{{waiting}}"
+        data-exchanging="{{exchanging}}"
+        data-connected="{{connected}}"
+        data-cancelled="{{cancelled}}"
+        data-expired="{{expired}}"
+        data-failed="{{failed}}"
+        data-closed="{{closed}}"
+        data-retry="{{retry}}"
+        class="subheader"
+        role="status"
+      >
+        {{waiting}}
+      </p>
+      <p class="server">{{serverLabel}}: {{server}}</p>
+      <div id="manual" class="description-block">
+        <p>{{instructions}}</p>
+        <p>{{explanation}}</p>
+        <form data-login-token="{{token}}">
+          <div class="field">
+            <label for="code">{{code}}</label>
+            <input
+              id="code"
+              type="password"
+              autocomplete="off"
+              aria-describedby="code-hint"
+              required
+              maxlength="8192"
+            />
+          </div>
+          <button type="submit">{{submit}}</button>
+        </form>
+        <p id="code-hint" class="hint">{{hint}}</p>
+      </div>
+      <div id="done" class="description-block" hidden>
+        <p>{{done}}</p>
+      </div>
+      <section id="tls-help" hidden>
+        <h2>{{tlsHelp}}</h2>
+        <div class="description-block remedy">
+          <h3>{{tlsCaTitle}}</h3>
+          <p>{{tlsCaBody}}</p>
+          <details>
+            <summary>{{tlsExample}}</summary>
+            <p>{{tlsCaHint}}</p>
+            <pre>{{caExample}}</pre>
+          </details>
+        </div>
+        <div class="description-block remedy">
+          <h3>{{tlsExceptionTitle}}</h3>
+          <p>{{tlsExceptionBody}}</p>
+          <details>
+            <summary>{{tlsExample}}</summary>
+            <p>{{tlsExceptionHint}}</p>
+            <pre>{{insecureExample}}</pre>
+          </details>
+        </div>
+        <p class="hint">{{tlsCertificateHint}}</p>
+        <p>{{tlsRestart}}</p>
+      </section>
+    </main>
+    <script src="./manual.js" defer></script>
+  </body>
+</html>

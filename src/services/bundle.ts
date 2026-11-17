@@ -1,11 +1,13 @@
 import fs from 'node:fs';
-import cliProgress from 'cli-progress';
-import { logger as log } from '../utils/logger.js';
-import { downloadBundle, unpackBundle } from '../utils/downloader.js';
 import { getDownloadSecurityOptions } from '../utils/downloadSecurity.js';
-import { formatTransfer } from '../utils/progress.js';
+import { logger as log } from '../utils/logger.js';
+import { getBundleDir, getExpectedBundleVersion, getProxyPath, readVersionsJson } from '../utils/paths.js';
+import { Platform } from '../utils/platform-constants.js';
 import { killAnalyzerProcesses } from '../utils/processes.js';
-import { getBundleDir, getProxyPath, readVersionsJson } from '../utils/paths.js';
+import { INSTALLER_PRODUCT_ID } from './bundle-constants.js';
+import { BundleProgress } from './bundle-progress.js';
+import { downloadBundle } from './installer/download.js';
+import { unpackBundle } from './installer/extraction.js';
 
 export interface BundleOperationOptions {
   version: string;
@@ -17,8 +19,7 @@ export async function runBundleOperation({ version, successMessage }: BundleOper
   const onSigint = () => abortController.abort();
   process.once('SIGINT', onSigint);
 
-  let progressBar: cliProgress.SingleBar | undefined;
-  let extractionBar: cliProgress.SingleBar | undefined;
+  const progress = new BundleProgress();
 
   try {
     log.step('Stopping analyzer processes...');
@@ -30,21 +31,10 @@ export async function runBundleOperation({ version, successMessage }: BundleOper
       version,
       signal: abortController.signal,
       ...getDownloadSecurityOptions(),
-      onProgress: ({ downloaded, total }) => {
-        if (total <= 0) return;
-        if (!progressBar) {
-          progressBar = new cliProgress.SingleBar(
-            { format: '  [{bar}] {percentage}% | {bytes}', hideCursor: true },
-            cliProgress.Presets.shades_classic,
-          );
-          progressBar.start(total, downloaded, { bytes: formatTransfer(downloaded, total) });
-        } else {
-          progressBar.update(Math.min(downloaded, total), { bytes: formatTransfer(downloaded, total) });
-        }
-      },
+      onProgress: (event) => progress.download(event),
     });
-    progressBar?.stop();
-    progressBar = undefined;
+
+    progress.finishDownload();
 
     // A host agent may restart the proxy while a multi-gigabyte bundle is downloading.
     // Re-check immediately before replacing files to avoid locked DLLs on Windows.
@@ -53,28 +43,23 @@ export async function runBundleOperation({ version, successMessage }: BundleOper
     log.info(formatStopResult(finalStop));
 
     log.step('Unpacking analyzer bundle...');
-    await unpackBundle(downloadResult.archivePath, getBundleDir(), undefined, ({ extracted, total }) => {
-      if (!extractionBar) {
-        extractionBar = new cliProgress.SingleBar(
-          { format: '  [{bar}] {percentage}% | {value}/{total} files', hideCursor: true },
-          cliProgress.Presets.shades_classic,
-        );
-        extractionBar.start(total, extracted);
-      } else {
-        extractionBar.update(extracted);
-      }
-    });
-    extractionBar?.stop();
+    await unpackBundle(downloadResult.archivePath, getBundleDir(), undefined, (event) => progress.extraction(event));
+    progress.finishExtraction();
 
-    if (process.platform === 'darwin') verifyMacInstallation(version);
+    if (process.platform === Platform.MacOS) {
+      verifyMacInstallation(version);
+    }
 
     fs.rmSync(downloadResult.archivePath, { force: true });
     log.success(successMessage);
   } finally {
-    progressBar?.stop();
-    extractionBar?.stop();
+    progress.close();
     process.removeListener('SIGINT', onSigint);
   }
+}
+
+export function isCurrentBundleInstalled(version = getExpectedBundleVersion()): boolean {
+  return !!version && fs.existsSync(getProxyPath()) && readVersionsJson()?.[INSTALLER_PRODUCT_ID] === version;
 }
 
 function formatStopResult(result: Awaited<ReturnType<typeof killAnalyzerProcesses>>): string {
@@ -84,7 +69,8 @@ function formatStopResult(result: Awaited<ReturnType<typeof killAnalyzerProcesse
 }
 
 function verifyMacInstallation(expectedVersion: string): void {
-  const currentVersion = readVersionsJson()?.['AI.INFRASTRUCTURE.INSTALLATOR'];
+  const currentVersion = readVersionsJson()?.[INSTALLER_PRODUCT_ID];
+
   if (!fs.existsSync(getProxyPath()) || currentVersion !== expectedVersion) {
     throw new Error(
       `The macOS installer closed before bundle ${expectedVersion} was installed. Complete the installation and retry.`,

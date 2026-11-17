@@ -1,8 +1,8 @@
 {
   "name": "@posidev-community/ptai-mcp",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "mcpName": "io.github.POSIdev-community/ptai-mcp",
-  "description": "Standalone npm-package for PT Application Inspector MCP",
+  "description": "MCP server for PT Application Inspector: local code analysis and AIE server projects, scans and findings.",
   "type": "module",
   "main": "dist/cli.js",
   "bin": {
@@ -12,15 +12,22 @@
     "bin/",
     "dist/",
     "README.md",
+    "docs/usage.md",
+    "docs/telemetry.md",
+    "docs/architecture.md",
+    "RELEASING.md",
     "server.json"
   ],
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && node scripts/copy-aie-login-assets.mjs && node scripts/write-bundled-notices.mjs && node scripts/write-flus-config.mjs",
+    "audit:runtime": "node scripts/audit-runtime.mjs",
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
-    "lint": "eslint src test scripts",
+    "lint": "eslint src test scripts assets bin eslint.config.js tsup.config.ts vitest.config.ts",
+    "lint:fix": "eslint src test scripts assets bin eslint.config.js tsup.config.ts vitest.config.ts --fix",
+    "quality:report": "node scripts/report-function-sizes.mjs",
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "metadata:sync": "node scripts/sync-server-metadata.mjs",
@@ -41,7 +48,7 @@
     "darwin"
   ],
   "engines": {
-    "node": ">=18"
+    "node": "^18.19.0 || >=20.6.0"
   },
   "publishConfig": {
     "access": "public"
@@ -63,23 +70,37 @@
   "dependencies": {
     "@clack/prompts": "^0.7.0",
     "@iarna/toml": "^2.2.5",
+    "@opentelemetry/api": "1.9.0",
+    "@opentelemetry/otlp-transformer": "0.223.1",
+    "@opentelemetry/resources": "2.12.1",
+    "@opentelemetry/sdk-metrics": "2.12.1",
+    "ajv": "8.20.0",
     "cli-progress": "^3.12.0",
-    "commander": "^12.0.0"
+    "commander": "^12.0.0",
+    "ignore": "7.0.14",
+    "undici": "6.29.1",
+    "yauzl": "3.4.0",
+    "yazl": "3.3.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@types/cli-progress": "^3.11.5",
     "@types/node": "^20.0.0",
+    "@types/yauzl": "3.4.0",
+    "@types/yazl": "3.3.1",
     "@vitest/coverage-v8": "^3.2.6",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.6",
+    "eslint-plugin-simple-import-sort": "12.1.1",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "prettier": "^3.9.9",
     "tsup": "^8.0.2",
     "typescript": "^5.4.0",
     "typescript-eslint": "^8.70.1",
-    "vitest": "^3.2.6"
+    "vitest": "^3.2.6",
+    "yaml": "2.9.1"
   }
 }

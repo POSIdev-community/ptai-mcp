@@ -17,7 +17,8 @@ const unpackBundle = vi.fn(async (...args: unknown[]) => {
   onProgress?.({ extracted: 1, total: 2 });
   onProgress?.({ extracted: 2, total: 2 });
 });
-vi.mock('../src/utils/downloader.js', () => ({ downloadBundle, unpackBundle }));
+vi.mock('../src/services/installer/download.js', () => ({ downloadBundle }));
+vi.mock('../src/services/installer/extraction.js', () => ({ unpackBundle }));
 const killAnalyzerProcesses = vi.fn(async () => ({ stopped: [], notRunning: [] }));
 vi.mock('../src/utils/processes.js', () => ({ killAnalyzerProcesses }));
 const configureCommand = vi.fn(async () => undefined);
@@ -71,6 +72,7 @@ describe('install, update and uninstall commands', () => {
     const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
     vi.spyOn(fs, 'existsSync').mockReturnValue(false);
     const rm = vi.spyOn(fs, 'rmSync').mockImplementation(() => undefined);
+    confirm.mockResolvedValue(true);
 
     // Act
     await installCommand();
@@ -80,7 +82,8 @@ describe('install, update and uninstall commands', () => {
     expect(downloadBundle).toHaveBeenCalled();
     expect(unpackBundle).toHaveBeenCalledWith('archive.zip', 'bundle-dir', undefined, expect.any(Function));
     expect(rm).toHaveBeenCalledWith('archive.zip', { force: true });
-    expect(configureCommand).toHaveBeenCalled();
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ initialValue: false }));
+    expect(configureCommand).toHaveBeenCalledWith({ localHooks: true });
     platform.mockRestore();
   });
 
@@ -94,6 +97,34 @@ describe('install, update and uninstall commands', () => {
 
     // Assert
     expect(downloadBundle).not.toHaveBeenCalled();
+    expect(killAnalyzerProcesses).not.toHaveBeenCalled();
+    expect(configureCommand).toHaveBeenCalledWith({ localHooks: false });
+  });
+
+  it('continues AIE MCP setup without download or local hooks when a fresh bundle is declined', async () => {
+    vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+    confirm.mockResolvedValue(false);
+
+    await installCommand();
+
+    expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ initialValue: false }));
+    expect(log.info).toHaveBeenCalledWith(expect.stringContaining('AIE server tools work without it'));
+    expect(downloadBundle).not.toHaveBeenCalled();
+    expect(unpackBundle).not.toHaveBeenCalled();
+    expect(killAnalyzerProcesses).not.toHaveBeenCalled();
+    expect(configureCommand).toHaveBeenCalledWith({ localHooks: false });
+  });
+
+  it('offers repair when versions.json is current but the proxy is missing', async () => {
+    expectedVersion = installedVersion;
+    vi.spyOn(fs, 'existsSync').mockImplementation((file) => file === 'versions.json');
+    confirm.mockResolvedValue(false);
+
+    await installCommand();
+
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(downloadBundle).not.toHaveBeenCalled();
+    expect(configureCommand).toHaveBeenCalledWith({ localHooks: false });
   });
 
   it('does not reinstall an already current bundle', async () => {
@@ -108,6 +139,8 @@ describe('install, update and uninstall commands', () => {
     // Assert
     expect(downloadBundle).not.toHaveBeenCalled();
     expect(log.info).toHaveBeenCalledWith('Bundle 1.0.0 is already up to date.');
+    expect(confirm).not.toHaveBeenCalled();
+    expect(configureCommand).toHaveBeenCalledWith({ localHooks: true });
 
     // Cleanup
     expectedVersion = '2.0.0';
@@ -123,6 +156,16 @@ describe('install, update and uninstall commands', () => {
 
     // Assert
     expect(downloadBundle).not.toHaveBeenCalled();
+    expect(configureCommand).not.toHaveBeenCalled();
+  });
+
+  it('cancels a fresh optional bundle prompt before download or agent configuration', async () => {
+    vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+    confirm.mockResolvedValue(Symbol.for('cancel'));
+    await installCommand();
+    expect(downloadBundle).not.toHaveBeenCalled();
+    expect(killAnalyzerProcesses).not.toHaveBeenCalled();
+    expect(configureCommand).not.toHaveBeenCalled();
   });
 
   it('rejects missing package metadata', async () => {

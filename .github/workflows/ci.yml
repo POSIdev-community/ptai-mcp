@@ -32,15 +32,17 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Audit runtime dependencies
-        run: npm audit --omit=dev
-
       - name: Verify source, tests and package
         run: npm run verify
+
+      - name: Report function and file sizes
+        run: npm run quality:report
+
+      - name: Audit installed and bundled runtime dependencies
+        run: npm run audit:runtime
 
       - name: Inspect npm package
         run: npm pack --dry-run
 
       - name: Smoke test packed artifact
-        if: matrix.os == 'ubuntu-latest' && matrix.node-version == '22.x'
         run: npm run smoke:artifact

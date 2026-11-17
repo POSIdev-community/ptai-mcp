@@ -13,3 +13,15 @@ coverage/
 *.swp
 Thumbs.db
 .DS_Store
+.runtime/
+.cache/
+artifacts-*.json
+artifacts-*.jsonl
+openapitools.json
+
+# AIDT-3421 local validation evidence and mutating stand probes
+/docs/aie-poc-*.md
+/scripts/bootstrap-live-session.mjs
+/scripts/live-*.mjs
+/scripts/probe-aie-*.mjs
+/ci/flus-config.template.json
