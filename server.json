@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.POSIdev-community/ptai-mcp",
   "title": "PT Application Inspector MCP",
-  "description": "Connect AI agents to the PT Application Inspector local analyzer and AIE server to scan code, manage projects and triage findings.",
+  "description": "Connect AI agents to the PT AI local analyzer and AIE server for scans, projects and triage.",
   "repository": {
     "url": "https://github.com/POSIdev-community/ptai-mcp",
     "source": "github"

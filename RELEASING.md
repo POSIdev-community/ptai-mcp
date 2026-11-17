@@ -159,10 +159,12 @@ If necessary, authenticate:
 npm login
 ```
 
-Publish the scoped package publicly:
+Publish the verified archive produced by the release-configured build. This
+preserves its telemetry configuration without rebuilding from your current shell:
 
 ```powershell
-npm publish --access public
+$artifact = "C:\path\to\posidev-community-ptai-mcp-1.1.0.tgz"
+npm publish $artifact --access public --tag latest --registry=https://registry.npmjs.org
 ```
 
 After publishing, corrections require a new patch version: npm does not allow

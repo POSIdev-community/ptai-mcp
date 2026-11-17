@@ -9,6 +9,14 @@ const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
 const serverSource = fs.readFileSync(serverPath, 'utf8');
 const serverJson = JSON.parse(serverSource);
 
+if (
+  typeof serverJson.description !== 'string' ||
+  !serverJson.description.trim() ||
+  serverJson.description.length > 100
+) {
+  throw new Error('server.json description must contain 1 to 100 characters for the MCP Registry.');
+}
+
 const npmPackage = serverJson.packages?.find((entry) => entry.registryType === 'npm');
 const mismatches = [];
 if (!packageJson.mcpName) {
