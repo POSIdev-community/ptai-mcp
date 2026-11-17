@@ -97,7 +97,13 @@ export class SessionStorage {
   }
 
   private async withLock<T>(action: () => Promise<T>): Promise<T> {
-    await fs.mkdir(path.dirname(this.file), { recursive: true });
+    try {
+      await fs.mkdir(path.dirname(this.file), { recursive: true, mode: 0o700 });
+    } catch {
+      throw new ToolError(ErrorCode.SessionUnwritable, 'Could not create the AIE session directory.', {
+        next_action: 'Check write access to the session directory for the OS user running MCP.',
+      });
+    }
 
     return withSessionLock(this.file, action);
   }

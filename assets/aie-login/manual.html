@@ -30,12 +30,20 @@
         <p>{{instructions}}</p>
         <p>{{explanation}}</p>
         <form data-login-token="{{token}}">
-          <label for="code">{{code}}</label
-          ><input id="code" type="password" autocomplete="off" required maxlength="8192" /><button type="submit">
-            {{submit}}
-          </button>
+          <div class="field">
+            <label for="code">{{code}}</label>
+            <input
+              id="code"
+              type="password"
+              autocomplete="off"
+              aria-describedby="code-hint"
+              required
+              maxlength="8192"
+            />
+          </div>
+          <button type="submit">{{submit}}</button>
         </form>
-        <p class="hint">{{hint}}</p>
+        <p id="code-hint" class="hint">{{hint}}</p>
       </div>
       <div id="done" class="description-block" hidden>
         <p>{{done}}</p>

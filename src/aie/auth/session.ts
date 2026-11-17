@@ -5,7 +5,6 @@ import path from 'node:path';
 import { Effects } from '../../shared/effects.js';
 import { ErrorCode } from '../../shared/error-codes.js';
 import { safeError, ToolError, validation } from '../../shared/errors.js';
-import { getBundleDir } from '../../utils/paths.js';
 import { AieApi } from '../api/client.js';
 import { AuthScope } from '../api/contracts.js';
 import { serverUrl } from '../api/server-url.js';
@@ -22,6 +21,7 @@ import {
   type SharedSession,
 } from './models.js';
 import { sessionFingerprint } from './session-codec.js';
+import { getSessionFile } from './session-path.js';
 import { SessionStorage } from './session-storage.js';
 
 export class Sessions {
@@ -38,7 +38,7 @@ export class Sessions {
   private watchWarning?: string;
 
   public constructor(
-    public readonly storage = new SessionStorage(path.join(getBundleDir(), 'shared_variables')),
+    public readonly storage = new SessionStorage(getSessionFile()),
     private readonly apiFactory = (origin: string, token?: string) => new AieApi(origin, token),
     private readonly onIdentityChange: (oldIdentity: string) => void = () => undefined,
     private readonly loginFactory = (origin: string, complete: (code: string, signal: AbortSignal) => Promise<void>) =>
@@ -53,7 +53,7 @@ export class Sessions {
 
   public async initialize() {
     try {
-      await fsp.mkdir(path.dirname(this.storage.file), { recursive: true });
+      await fsp.mkdir(path.dirname(this.storage.file), { recursive: true, mode: 0o700 });
       this.watcher = fs.watch(path.dirname(this.storage.file), (_event, file) => {
         if (file && file.toString() !== path.basename(this.storage.file)) {
           return;

@@ -49,11 +49,12 @@ h1 {
 }
 .subheader {
   margin: 16px 0 20px;
+  overflow-wrap: anywhere;
 }
 .description-block {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   padding: 24px;
   background: #f4f5f7;
 }
@@ -61,18 +62,28 @@ h1 {
   margin: 0;
 }
 .server {
+  margin: 0 0 16px;
   overflow-wrap: anywhere;
   color: #626b75;
   font-size: 14px;
 }
+form,
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.field {
+  gap: 8px;
+}
 label {
-  display: block;
-  margin-bottom: 8px;
   font-weight: 600;
 }
 input {
   display: block;
   width: 100%;
+  min-width: 0;
+  min-height: 44px;
   padding: 10px 12px;
   border: 1px solid #bbc3cc;
   border-radius: 4px;
@@ -81,6 +92,7 @@ input {
 }
 button {
   align-self: flex-start;
+  min-height: 44px;
   padding: 10px 18px;
   border: 0;
   border-radius: 4px;
@@ -89,6 +101,14 @@ button {
   font: inherit;
   font-weight: 600;
   cursor: pointer;
+}
+button:hover:not(:disabled) {
+  background: #c40026;
+}
+input:focus-visible,
+button:focus-visible {
+  outline: 2px solid #394e75;
+  outline-offset: 3px;
 }
 button:disabled {
   opacity: 0.5;
@@ -104,6 +124,7 @@ pre {
   background: #fff;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 13px;
 }
 h2 {
@@ -136,7 +157,6 @@ details p {
 }
 details pre {
   margin-top: 8px;
-  font-family: Consolas, monospace;
   line-height: 1.5;
 }
 [hidden] {
@@ -150,7 +170,13 @@ details pre {
     margin-bottom: 32px;
   }
   h1 {
-    font-size: 32px;
-    line-height: 40px;
+    font-size: 28px;
+    line-height: 36px;
+  }
+  .description-block {
+    padding: 16px;
+  }
+  button {
+    align-self: stretch;
   }
 }
