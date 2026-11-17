@@ -28,7 +28,7 @@ export class LoginAttempt {
   private base = '';
   private browserOpened = false;
   private manualViewed = false;
-  private successOpened = false;
+  private resultOpened = false;
   private gate?: Promise<void>;
   private queued?: string;
   private exchangingHash?: string;
@@ -91,7 +91,15 @@ export class LoginAttempt {
       poll_after_ms: this.pending() ? LIMITS.pollMs : null,
       error: this.lastError,
       next_action: this.pending()
-        ? 'Complete sign-in in the browser. Enter any manual code only in the local form, never in chat.'
+        ? 'Tell the user to sign in in the browser and show manual_url as the fallback link. ' +
+          'If browser_opened is false, also show login_url so they can open it themselves. ' +
+          'The AIE page may mention Visual Studio and stay open even after login. ' +
+          'Check aie_get_context with this login_id before asking for manual entry. ' +
+          'If login is still waiting and AIE displays a code (also labeled token), ask the user to copy it ' +
+          'into the Authorization code field at manual_url and submit the form. ' +
+          'Never ask for the code in chat or tool arguments. ' +
+          'If the local form cannot be reached, check that the browser and MCP run on the same computer. ' +
+          'After expires_at or an MCP restart, start a new login instead of reusing the old code or link.'
         : undefined,
     };
   }
@@ -211,10 +219,15 @@ export class LoginAttempt {
     this.send(res, 200, { state: this.state });
 
     // AIE delivers the callback with fetch, so its tab does not navigate.
-    // Open a local confirmation tab only when the browser path completed login.
-    if (wasPending && this.state === LoginState.Connected && !this.manualViewed && !this.successOpened) {
-      this.successOpened = true;
-      void this.open(this.successUrl()).catch(() => false);
+    // Show the local result for both successful and failed code exchanges.
+    const terminal = this.state === LoginState.Connected || this.state === LoginState.Failed;
+
+    if (wasPending && terminal && !this.manualViewed && !this.resultOpened) {
+      this.resultOpened = true;
+      const resultUrl =
+        this.state === LoginState.Connected ? this.successUrl() : `${this.base}${this.secretPath}/manual`;
+
+      void this.open(resultUrl).catch(() => false);
     }
 
     return;
@@ -253,6 +266,16 @@ export class LoginAttempt {
     return this.send(res, 200, { state: this.state });
   }
 
+  private statusView() {
+    const certificateError = this.lastError?.code === ErrorCode.TlsError && this.lastError.tls?.insecure_tls_env;
+
+    return {
+      state: this.state,
+      error: this.lastError?.message,
+      ...(certificateError ? { certificate_error: true } : {}),
+    };
+  }
+
   private async handle(req: http.IncomingMessage, res: ServerResponse) {
     if (req.headers.host !== this.base.slice('http://'.length)) {
       return this.send(res, 403, { error: 'Invalid host.' });
@@ -283,13 +306,13 @@ export class LoginAttempt {
     }
 
     if (url.pathname === `${this.secretPath}/status` && req.method === HttpMethod.Get) {
-      return this.send(res, 200, { state: this.state, error: this.lastError?.message });
+      return this.send(res, 200, this.statusView());
     }
 
     if (url.pathname === `${this.secretPath}/manual` && req.method === HttpMethod.Get) {
       this.manualViewed = true;
       res.writeHead(200, loginPageHeaders);
-      res.end(renderLoginPage(LoginPage.Manual, this.origin, this.stateToken));
+      res.end(renderLoginPage(LoginPage.Manual, this.origin, this.stateToken, req.headers['accept-language']));
 
       return;
     }
@@ -300,7 +323,7 @@ export class LoginAttempt {
       }
 
       res.writeHead(200, loginPageHeaders);
-      res.end(renderLoginPage(LoginPage.Success, this.origin));
+      res.end(renderLoginPage(LoginPage.Success, this.origin, '', req.headers['accept-language']));
 
       return;
     }

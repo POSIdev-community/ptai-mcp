@@ -42,9 +42,61 @@ async function attempt(complete: (code: string, signal: AbortSignal) => Promise<
 }
 
 describe('loopback sign-in gate', () => {
+  it.each([
+    ['ru-RU, en;q=0.9', 'ru', 'Код авторизации'],
+    ['ru;q=0.5, en-US;q=0.9', 'en', 'Authorization code'],
+    ['de-DE, ru;q=0.8', 'ru', 'Код авторизации'],
+    ['RU-ru', 'ru', 'Код авторизации'],
+    ['de-DE', 'en', 'Authorization code'],
+    ['', 'en', 'Authorization code'],
+    ['*', 'en', 'Authorization code'],
+    ['ru;q=0', 'en', 'Authorization code'],
+    ['ru;q=invalid', 'en', 'Authorization code'],
+    ['ru;q=2', 'en', 'Authorization code'],
+    ['ru;q=0.5, de;q=invalid, en;q=1', 'en', 'Authorization code'],
+  ])('localizes both pages for Accept-Language %s', async (language, expected, label) => {
+    const { view, submit } = await attempt(async () => undefined);
+    const headers = { 'Accept-Language': language };
+    const manual = await (await fetch(view.manual_url, { headers })).text();
+    expect(manual).toContain('<html lang="' + expected + '">');
+    expect(manual).toContain(label);
+    expect(manual).toContain(
+      expected === 'ru' ? 'data-exchanging="Проверка кода…"' : 'data-exchanging="Checking the code…"',
+    );
+    expect(manual).toContain(expected === 'ru' ? 'Сервер: https://example.com' : 'Server: https://example.com');
+    expect(manual).not.toContain('{{');
+    await submit('test-code');
+    const success = await (await fetch(view.manual_url.replace(/manual$/, 'success'), { headers })).text();
+    expect(success).toContain('<html lang="' + expected + '">');
+    expect(success).toContain(
+      expected === 'ru' ? 'Теперь можно вернуться к вашему агенту.' : 'You can now return to your agent.',
+    );
+    expect(success).not.toContain('{{');
+    if (expected === 'en') {
+      expect(manual + success).not.toMatch(/[А-Яа-яЁё]/);
+    }
+  });
+  it('completes manual sign-in when the browser callback never arrives', async () => {
+    const complete = vi.fn(async () => undefined);
+    const { login, view, submit, open } = await attempt(complete);
+    expect(view.browser_opened).toBe(false);
+    expect(view.next_action).toContain('login_url');
+    expect(view.next_action).toContain('manual_url');
+    expect(view.next_action).toContain('Visual Studio');
+    expect(view.next_action).toContain('Check aie_get_context');
+    expect(login.view().state).toBe('waiting');
+    expect(complete).not.toHaveBeenCalled();
+    const page = await fetch(view.manual_url, { headers: { 'Accept-Language': 'ru-RU' } });
+    expect(await page.text()).toContain('Не вставляйте код в чат агента');
+    await submit('synthetic-fallback-code');
+    expect(login.view().state).toBe('connected');
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(login.view())).not.toContain('synthetic-fallback-code');
+    expect(open).toHaveBeenCalledTimes(1);
+  });
   it('serves external login assets under a restrictive CSP and rejects arbitrary asset paths', async () => {
     const { view } = await attempt(async () => undefined);
-    const page = await fetch(view.manual_url);
+    const page = await fetch(view.manual_url, { headers: { 'Accept-Language': 'ru-RU' } });
     const policy = page.headers.get('content-security-policy')!;
     expect(policy).toContain("script-src 'self'");
     expect(policy).toContain("style-src 'self'");
@@ -76,7 +128,7 @@ describe('loopback sign-in gate', () => {
     await vi.waitFor(() => expect(open).toHaveBeenCalledTimes(2));
     expect(open).toHaveBeenLastCalledWith(successUrl);
     expect(successUrl).not.toContain('sensitive-code');
-    const page = await fetch(successUrl);
+    const page = await fetch(successUrl, { headers: { 'Accept-Language': 'ru-RU' } });
     expect(page.status).toBe(200);
     expect(page.headers.get('cache-control')).toBe('no-store');
     expect(page.headers.get('content-security-policy')).toContain("default-src 'none'");
@@ -116,7 +168,7 @@ describe('loopback sign-in gate', () => {
   });
   it('provides a no-store manual page and explicit upstream CORS', async () => {
     const { view, callback, submit, open } = await attempt(async () => undefined);
-    const page = await fetch(view.manual_url);
+    const page = await fetch(view.manual_url, { headers: { 'Accept-Language': 'ru-RU' } });
     expect(page.headers.get('cache-control')).toBe('no-store');
     expect(page.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");
     const body = await page.text();

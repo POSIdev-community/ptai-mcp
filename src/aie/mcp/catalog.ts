@@ -51,7 +51,7 @@ export const aieCatalog: Tool[] = [
   defineTool({
     name: AieToolName.Auth,
     description:
-      'Explicit AIE login/logout/cancel_login. Login opens the system browser and returns login_id plus a local manual form. Never provide authorization codes or tokens in tool arguments/chat. A failed or cancelled login preserves the previous session.',
+      'Explicit AIE login/logout/cancel_login. Before login, tell the user that sign-in opens in their browser and any fallback code must go into a local form, never chat. Login returns login_id, login_url and manual_url. Show the fallback link and follow next_action; check aie_get_context(login_id) to confirm connection even if the AIE page still mentions Visual Studio. A failed or cancelled login preserves the previous session.',
     properties: {
       action: { type: 'string', enum: Object.values(AuthAction) },
       server_url: nonEmptyStringSchema,
@@ -64,7 +64,7 @@ export const aieCatalog: Tool[] = [
   defineTool({
     name: AieToolName.GetContext,
     description:
-      'Read AIE session, advisory permissions and local login attempt state. Use login_id to poll a pending sign-in. Working calls are explicitly retried after login.',
+      'Read the current AIE session and advisory permissions. With login_id, inspect that login target: waiting or failed attempts are read locally without contacting the previous server. context_scope identifies the response; current_session, when present, is not validated. login.error describes a failed attempt. Known certificate failures include the Node reason, CA setup and a per-origin exception example that requires explicit approval. Reconnect MCP after environment changes. Explicitly retry working calls after login.',
     properties: { login_id: nonEmptyStringSchema },
     required: [],
     readOnly: true,

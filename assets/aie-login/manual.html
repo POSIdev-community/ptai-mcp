@@ -1,30 +1,68 @@
 <!doctype html>
-<html lang="ru">
+<html lang="{{lang}}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Вход в PT AI MCP</title>
+    <title>{{title}}</title>
     <link rel="stylesheet" href="./login.css" />
   </head>
   <body>
     <main class="root">
       <div class="pt-logo">{{logo}}</div>
-      <h1 id="heading" data-success-label="Успешный вход">Вход в AIE</h1>
-      <p id="status" class="subheader" role="status">Ожидаем вход в браузере…</p>
+      <h1 id="heading" data-success-label="{{success}}">{{heading}}</h1>
+      <p
+        id="status"
+        data-waiting="{{waiting}}"
+        data-exchanging="{{exchanging}}"
+        data-connected="{{connected}}"
+        data-cancelled="{{cancelled}}"
+        data-expired="{{expired}}"
+        data-failed="{{failed}}"
+        data-closed="{{closed}}"
+        data-retry="{{retry}}"
+        class="subheader"
+        role="status"
+      >
+        {{waiting}}
+      </p>
+      <p class="server">{{serverLabel}}: {{server}}</p>
       <div id="manual" class="description-block">
-        <p>Если AIE показал код, введите его здесь.</p>
+        <p>{{instructions}}</p>
+        <p>{{explanation}}</p>
         <form data-login-token="{{token}}">
-          <label for="code">Код авторизации</label
+          <label for="code">{{code}}</label
           ><input id="code" type="password" autocomplete="off" required maxlength="8192" /><button type="submit">
-            Продолжить
+            {{submit}}
           </button>
         </form>
-        <p class="hint">Не передавайте код агенту.</p>
+        <p class="hint">{{hint}}</p>
       </div>
       <div id="done" class="description-block" hidden>
-        <p>Подключение к AIE установлено. Эту вкладку можно закрыть.</p>
-        <p class="server">Сервер: {{server}}</p>
+        <p>{{done}}</p>
       </div>
+      <section id="tls-help" hidden>
+        <h2>{{tlsHelp}}</h2>
+        <div class="description-block remedy">
+          <h3>{{tlsCaTitle}}</h3>
+          <p>{{tlsCaBody}}</p>
+          <details>
+            <summary>{{tlsExample}}</summary>
+            <p>{{tlsCaHint}}</p>
+            <pre>{{caExample}}</pre>
+          </details>
+        </div>
+        <div class="description-block remedy">
+          <h3>{{tlsExceptionTitle}}</h3>
+          <p>{{tlsExceptionBody}}</p>
+          <details>
+            <summary>{{tlsExample}}</summary>
+            <p>{{tlsExceptionHint}}</p>
+            <pre>{{insecureExample}}</pre>
+          </details>
+        </div>
+        <p class="hint">{{tlsCertificateHint}}</p>
+        <p>{{tlsRestart}}</p>
+      </section>
     </main>
     <script src="./manual.js" defer></script>
   </body>

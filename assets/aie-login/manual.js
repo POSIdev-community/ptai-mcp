@@ -4,6 +4,7 @@ const statusText = document.querySelector('#status');
 const heading = document.querySelector('#heading');
 const manualSection = document.querySelector('#manual');
 const confirmationSection = document.querySelector('#done');
+const tlsHelp = document.querySelector('#tls-help');
 
 const LoginState = {
   Waiting: 'waiting',
@@ -15,23 +16,26 @@ const LoginState = {
 };
 
 const stateLabels = {
-  [LoginState.Waiting]: 'Ожидаем вход в браузере…',
-  [LoginState.Exchanging]: 'Проверяем код…',
-  [LoginState.Connected]: 'Теперь можно вернуться к вашему агенту.',
-  [LoginState.Cancelled]: 'Вход отменён.',
-  [LoginState.Expired]: 'Время входа истекло. Начните новую попытку в агенте.',
-  [LoginState.Failed]: 'Не удалось завершить вход.',
+  [LoginState.Waiting]: statusText.dataset.waiting,
+  [LoginState.Exchanging]: statusText.dataset.exchanging,
+  [LoginState.Connected]: statusText.dataset.connected,
+  [LoginState.Cancelled]: statusText.dataset.cancelled,
+  [LoginState.Expired]: statusText.dataset.expired,
+  [LoginState.Failed]: statusText.dataset.failed,
 };
 
 async function poll() {
   const response = await fetch('./status', { cache: 'no-store' });
   const view = await response.json();
-  statusText.textContent = (stateLabels[view.state] || view.state) + (view.error ? ' — ' + view.error : '');
+  const label = stateLabels[view.state] || view.state;
+  statusText.textContent = view.error ? label.replace(/[.!?]$/, '') + ': ' + view.error : label;
   const pending = view.state === LoginState.Waiting || view.state === LoginState.Exchanging;
 
   if (pending) {
     return;
   }
+
+  tlsHelp.hidden = view.state !== LoginState.Failed || view.certificate_error !== true;
 
   if (view.state === LoginState.Connected) {
     heading.textContent = heading.dataset.successLabel;
@@ -39,6 +43,9 @@ async function poll() {
     confirmationSection.hidden = false;
   } else {
     form.hidden = true;
+    manualSection.hidden = true;
+    confirmationSection.hidden = !tlsHelp.hidden;
+    confirmationSection.textContent = statusText.dataset.retry;
   }
 
   clearInterval(timer);
@@ -59,7 +66,7 @@ form.addEventListener('submit', async (event) => {
 const timer = setInterval(
   () =>
     poll().catch(() => {
-      statusText.textContent = 'Локальная страница входа закрыта.';
+      statusText.textContent = statusText.dataset.closed;
       clearInterval(timer);
     }),
   3000,

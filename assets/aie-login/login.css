@@ -31,7 +31,7 @@ body {
 .pt-logo {
   display: flex;
   align-items: center;
-  margin-bottom: 64px;
+  margin-bottom: 40px;
 }
 .pt-logo svg {
   display: block;
@@ -48,7 +48,7 @@ h1 {
     sans-serif;
 }
 .subheader {
-  margin: 16px 0 32px;
+  margin: 16px 0 20px;
 }
 .description-block {
   display: flex;
@@ -98,6 +98,47 @@ button:disabled {
   color: #626b75;
   font-size: 14px;
 }
+pre {
+  margin: 0;
+  padding: 12px;
+  background: #fff;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+h2 {
+  margin: 24px 0 16px;
+  font-size: 22px;
+}
+h3 {
+  margin: 0;
+  font-size: 17px;
+}
+.remedy {
+  gap: 8px;
+  padding: 16px 20px;
+  margin-bottom: 12px;
+}
+summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #394e75;
+}
+summary:focus-visible {
+  outline: 2px solid #394e75;
+  outline-offset: 4px;
+}
+details[open] summary {
+  margin-bottom: 12px;
+}
+details p {
+  font-size: 14px;
+}
+details pre {
+  margin-top: 8px;
+  font-family: Consolas, monospace;
+  line-height: 1.5;
+}
 [hidden] {
   display: none !important;
 }
@@ -106,7 +147,7 @@ button:disabled {
     margin: 32px auto;
   }
   .pt-logo {
-    margin-bottom: 48px;
+    margin-bottom: 32px;
   }
   h1 {
     font-size: 32px;

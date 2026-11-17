@@ -1,19 +1,19 @@
 <!doctype html>
-<html lang="ru">
+<html lang="{{lang}}">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Вход в PT AI MCP выполнен</title>
+    <title>{{successTitle}}</title>
     <link rel="stylesheet" href="./login.css" />
   </head>
   <body>
     <main class="root">
       <div class="pt-logo">{{logo}}</div>
-      <h1>Успешный вход</h1>
-      <p class="subheader">Теперь вы можете вернуться к вашему агенту.</p>
+      <h1>{{success}}</h1>
+      <p class="subheader">{{connected}}</p>
       <div class="description-block">
-        <p>Подключение к AIE установлено. Эту вкладку можно закрыть.</p>
-        <p class="server">Сервер: {{server}}</p>
+        <p>{{done}}</p>
+        <p class="server">{{serverLabel}}: {{server}}</p>
       </div>
     </main>
   </body>
