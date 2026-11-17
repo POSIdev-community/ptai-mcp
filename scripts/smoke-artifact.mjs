@@ -67,6 +67,7 @@ try {
     'manual.js',
     'ai_casgate_logo.svg',
     'Inter-Regular.woff2',
+    'Inter-LICENSE.txt',
     'TT-Positive-Regular.woff2',
   ]) {
     if (!fs.statSync(path.join(packageRoot, 'dist', 'assets', 'aie-login', name)).size) {

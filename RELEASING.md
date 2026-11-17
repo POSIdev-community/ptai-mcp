@@ -46,10 +46,10 @@ git status --short
 npm ci
 ```
 
-Choose the new semantic version. The examples below use `1.0.3`:
+Choose the new semantic version. The examples below use `1.1.0`:
 
 ```powershell
-$releaseVersion = "1.0.3"
+$releaseVersion = "1.1.0"
 npm version $releaseVersion --no-git-tag-version
 npm run metadata:sync
 ```
@@ -98,8 +98,7 @@ CI secrets and check the native macOS/Windows/Linux installation and IDE session
 matrix. Packaged Windows MCP clients may redirect AppData to LocalCache, so
 session sharing with an IDE must be verified in the actual release environment.
 
-Before public delivery, confirm redistribution terms for the generated AIE 6.3
-API contract and complete the platform/acceptance matrix. Pair the configured
+Complete the platform/acceptance matrix before public delivery. Pair the configured
 installer bundle version 3.0.1.1505 with the release candidate.
 Do not turn the optional BE4P shared-session patch into a POC installation
 requirement without a separate owner decision.

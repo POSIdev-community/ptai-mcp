@@ -2,18 +2,18 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.POSIdev-community/ptai-mcp",
   "title": "PT Application Inspector MCP",
-  "description": "Standalone launcher and agent integration for the PT Application Inspector MCP proxy.",
+  "description": "Connect AI agents to the PT Application Inspector local analyzer and AIE server to scan code, manage projects and triage findings.",
   "repository": {
     "url": "https://github.com/POSIdev-community/ptai-mcp",
     "source": "github"
   },
-  "version": "1.0.2",
+  "version": "1.1.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@posidev-community/ptai-mcp",
-      "version": "1.0.2",
+      "version": "1.1.0",
       "runtimeHint": "npx",
       "runtimeArguments": [
         {

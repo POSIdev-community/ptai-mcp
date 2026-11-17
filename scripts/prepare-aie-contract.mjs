@@ -71,6 +71,6 @@ fs.writeFileSync(
 );
 fs.writeFileSync(
   path.join(output, 'PROVENANCE.md'),
-  `# AIE API client\n\nGenerated locally from AI.Api.Client Swagger v6.3.0, using its configured\nOpenAPI Generator 7.0.0 typescript-fetch and modelPropertyNaming=original.\n\nSwagger SHA-256: \`${provenance.swagger_sha256}\`.\n\nThe source specification calls this the private API. This client has not been\npushed or published. Confirm redistribution terms before any public release.\nRelative imports are postprocessed to add .js for NodeNext. Runtime checks are\ndisabled in the generated client; domain writes use the bundled Swagger schemas.\n`,
+  `# AIE API client\n\nGenerated locally from AI.Api.Client Swagger v6.3.0, using its configured\nOpenAPI Generator 7.0.0 typescript-fetch and modelPropertyNaming=original.\n\nSwagger SHA-256: \`${provenance.swagger_sha256}\`.\n\nRelative imports are postprocessed to add .js for NodeNext. Runtime checks are\ndisabled in the generated client; domain writes use the bundled Swagger schemas.\n`,
 );
 console.log(JSON.stringify(provenance));

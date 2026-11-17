@@ -130,6 +130,8 @@ testing and code conventions, and [RELEASING.md](RELEASING.md) for publication.
 
 ## License
 
-This npm package is [MIT licensed](LICENSE). The optional PT Application Inspector
-analyzer bundle is proprietary software covered by the applicable Positive
-Technologies license agreement.
+This npm package is [MIT licensed](LICENSE). The bundled Inter font uses the SIL
+Open Font License 1.1; its license is included with the font.
+
+The optional PT Application Inspector analyzer bundle is proprietary software
+covered by the applicable Positive Technologies license agreement.
