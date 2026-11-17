@@ -69,7 +69,8 @@ describe('source upload packaging', () => {
   it.each(['source.js', '.aiproj.json', '.aiignore'])(
     'rejects a replaced %s between path validation and opening the file',
     async (name) => {
-      const source = await root();
+      // Match the canonical path opened by the packer, including temp directory aliases.
+      const source = await fs.realpath(await root());
       const outside = await root();
       const file = path.join(source, name);
       const privateFile = path.join(outside, 'private.json');
@@ -96,10 +97,15 @@ describe('source upload packaging', () => {
         return originalOpen(target, flags, mode);
       });
       try {
-        await expect(packSources(source, new AbortController().signal)).rejects.toMatchObject({
+        const packed = packSources(source, new AbortController().signal);
+        await packed.then(
+          (archive) => archive.cleanup(),
+          () => undefined,
+        );
+        expect(replaced).toBe(true);
+        await expect(packed).rejects.toMatchObject({
           code: 'AIE_SOURCE_CHANGED',
         });
-        expect(replaced).toBe(true);
       } finally {
         open.mockRestore();
       }
